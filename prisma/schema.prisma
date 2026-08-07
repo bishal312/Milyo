@@ -1,0 +1,135 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  items         Item[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}
+
+enum MatchStatus {
+  PENDING
+  CONFIRMED
+  REJECTED
+}
+
+enum ItemType {
+  LOST
+  FOUND
+}
+
+enum ItemStatus {
+  OPEN
+  MATCHED
+  CLAIMED
+  RESOLVED
+}
+
+model Match {
+  id          String      @id @default(cuid())
+  lostItemId  String
+  foundItemId String
+  score       Float
+  status      MatchStatus @default(PENDING)
+  createdAt   DateTime    @default(now())
+  lostItem    Item        @relation("LostItemMatches", fields: [lostItemId], references: [id])
+  foundItem   Item        @relation("FoundItemMatches", fields: [foundItemId], references: [id])
+}
+
+model Item {
+  id           String     @id @default(cuid())
+  type         ItemType
+  title        String
+  category     String
+  description  String
+  photoUrl     String?
+  latitude     Float?
+  longitude    Float?
+  status       ItemStatus @default(OPEN)
+  reportedBy   String
+  reporter     User       @relation(fields: [reportedBy], references: [id])
+  createdAt    DateTime   @default(now())
+  lostMatches  Match[]    @relation("LostItemMatches")
+  foundMatches Match[]    @relation("FoundItemMatches")
+}
+
+model Claim {
+  id         String   @id @default(cuid())
+  itemId     String
+  claimantId String
+  answers    Json
+  verified   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  chatId    String
+  senderId  String
+  content   String
+  createdAt DateTime @default(now())
+}

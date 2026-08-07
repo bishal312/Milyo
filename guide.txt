@@ -1,0 +1,9 @@
+npx cloudflared tunnel --url http://localhost:3000
+
+bun x prisma format
+bun x prisma migrate dev --name init
+
+bun x prisma generate
+
+bun add @prisma/adapter-pg pg
+bun add -d @types/pg
