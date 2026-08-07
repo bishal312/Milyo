@@ -3,7 +3,20 @@ npx cloudflared tunnel --url http://localhost:3000
 bun x prisma format
 bun x prisma migrate dev --name init
 
+
 bun x prisma generate
+bunx prisma db push 
 
 bun add @prisma/adapter-pg pg
 bun add -d @types/pg
+
+connect betterauth at first with prisma
+
+bunx @better-auth/cli generate
+bun prisma migrate reset
+bun prisma migrate dev --name init-auth
+
+---or--- (no reset)
+bun prisma db push
+bun prisma migrate dev --name init-auth --create-only
+bun prisma migrate resolve --applied init-auth
