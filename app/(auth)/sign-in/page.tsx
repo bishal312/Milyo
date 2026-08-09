@@ -120,7 +120,7 @@ export default function signInPage() {
                                 : "hover:opacity-90"
                         )}
                     >
-                        {isSubmitting ? "Creating account..." : "Create Account"}
+                        {isSubmitting ? "Signing in" : "Sign in"}
                     </button>
                 </form>
 
