@@ -18,6 +18,7 @@ import { db } from "@/lib/db";
 import type { Item, ItemStatus, Match } from "@/lib/generated/prisma/client";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { LogOutButton } from "../auth/LogOutButton";
 
 // types for the merged activity feed
 type ActivityEntry = {
@@ -198,6 +199,9 @@ export default async function DashboardPage() {
                         <Plus className="w-4 h-4" />
                         Report Item
                     </Link>
+
+                    <LogOutButton />
+
                     <Link
                         href="/items"
                         className="inline-flex items-center gap-2 bg-card hover:bg-muted border border-border text-foreground font-medium px-4 py-2.5 rounded-lg text-sm shadow-sm transition-colors"
