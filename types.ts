@@ -12,7 +12,7 @@ export const reportSchema = z.object({
         "OTHER",
     ]),
     type: z.enum(["LOST", "FOUND"]),
-    latitiude: z.number().nullable().optional(),
+    latitude: z.number().nullable().optional(),
     longitude: z.number().nullable().optional(),
 });
 
