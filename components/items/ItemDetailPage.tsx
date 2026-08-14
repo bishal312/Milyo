@@ -37,7 +37,7 @@ interface ItemDetail {
     latitude?: number | null;
     longitude?: number | null;
     createdAt: string;
-    user?: {
+    reporter?: {
         id: string;
         name: string;
         email: string;
@@ -183,11 +183,11 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
 
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold">
-                                {item.user?.name?.[0]?.toUpperCase() || <User className="w-5 h-5" />}
+                                {item.reporter?.name?.[0]?.toUpperCase() || <User className="w-5 h-5" />}
                             </div>
                             <div>
                                 <h4 className="text-sm font-semibold text-foreground">
-                                    {item.user?.name || "Anonymous Reporter"}
+                                    {item.reporter?.name || "Anonymous Reporter"}
                                 </h4>
                                 <p className="text-xs text-muted-foreground">Community Member</p>
                             </div>
