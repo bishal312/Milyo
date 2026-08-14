@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ItemType } from "@/types";
 
 // Custom Leaflet Pin Icon
-const markerIcon = new L.Icon({
+export const markerIcon = new L.Icon({
     iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
     iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
     shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
