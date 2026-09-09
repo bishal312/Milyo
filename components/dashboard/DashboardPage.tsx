@@ -324,7 +324,7 @@ export default async function DashboardPage() {
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="text-lg font-semibold text-card-foreground">My Reported Items</h2>
                             <Link
-                                href="/my-items"
+                                href="/items?mine=true"
                                 className="text-xs font-medium text-primary hover:underline flex items-center gap-1"
                             >
                                 View all <ArrowUpRight className="w-3.5 h-3.5" />

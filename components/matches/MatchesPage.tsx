@@ -1,0 +1,109 @@
+"use client";
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { ArrowUpRight, Check, X } from 'lucide-react';
+import { Match } from '@/lib/generated/prisma/client';
+import axios from 'axios';
+
+export default function MatchesPage() {
+    const [matches, setMatches] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchMatch = async () => {
+            const response = await axios.get("/api/matches");
+
+            if (!response.data) {
+                if (response.status === 404) throw new Error("Item report not found.");
+                throw new Error("Failed to load item details.");
+            }
+            setMatches(response.data);
+            setLoading(false);
+        };
+
+        fetchMatch();
+    }, []);
+
+    const handleUpdateStatus = async (id: string, status: "ACCEPTED" | "REJECTED") => {
+        await axios.patch(`/api/matches/${id}`, {
+            headers: { 'Content-Type': 'application/json' },
+            data: JSON.stringify({ status }),
+        });
+
+        setMatches((prev) =>
+            prev.map((m) => (m.id === id ? { ...m, status } : m))
+        );
+    };
+
+    if (loading) return <div className='p-6'>Loading</div>;
+
+    return (
+        <div className="max-w-4xl mx-auto p-6">
+            <h1 className="text-2xl font-bold mb-6">Potential AI Matches</h1>
+
+            {matches.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground border rounded-xl">
+                    No matches found yet.
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {matches.map((match) => (
+                        <div
+                            key={match.id}
+                            className="bg-card border border-border rounded-xl p-4 flex items-center justify-between shadow-sm"
+                        >
+                            <div className="flex items-center gap-6">
+                                <div>
+                                    <span className="text-xs text-red-500 font-semibold">LOST</span>
+                                    <p className="font-medium">{match.lostItem.title}</p>
+                                </div>
+
+                                <span className="text-muted-foreground font-bold">↔</span>
+
+                                <div>
+                                    <span className="text-xs text-green-500 font-semibold">FOUND</span>
+                                    <p className="font-medium">{match.foundItem.title}</p>
+                                </div>
+
+                                <div className="bg-primary/10 text-primary text-xs font-bold px-2.5 py-1 rounded-full">
+                                    {Math.round(match.score * 100)}% Match
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                {match.status === 'PENDING' ? (
+                                    <>
+                                        <button
+                                            onClick={() => handleUpdateStatus(match.id, 'ACCEPTED')}
+                                            className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                        >
+                                            <Check className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleUpdateStatus(match.id, 'REJECTED')}
+                                            className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </>
+                                ) : (
+                                    <span className="text-xs font-semibold capitalize px-2 py-1 bg-muted rounded">
+                                        {match.status.toLowerCase()}
+                                    </span>
+                                )}
+
+                                <Link
+                                    href={`/matches/${match.id}`}
+                                    className="p-2 border rounded-lg hover:bg-accent"
+                                >
+                                    <ArrowUpRight className="w-4 h-4" />
+                                </Link>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
