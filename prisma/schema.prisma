@@ -13,14 +13,15 @@ datasource db {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String        @id @default(cuid())
   name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
+  email         String        @unique
+  emailVerified Boolean       @default(false)
   image         String?
   items         Item[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  sentMessages  ChatMessage[] @relation("SentMessages")
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
   sessions      Session[]
   accounts      Account[]
 
@@ -104,7 +105,7 @@ model Match {
 }
 
 model Item {
-  id           String     @id @default(cuid())
+  id           String        @id @default(cuid())
   type         ItemType
   title        String
   category     String
@@ -112,12 +113,13 @@ model Item {
   photoUrl     String?
   latitude     Float?
   longitude    Float?
-  status       ItemStatus @default(OPEN)
+  status       ItemStatus    @default(OPEN)
   reportedBy   String
-  reporter     User       @relation(fields: [reportedBy], references: [id])
-  createdAt    DateTime   @default(now())
-  lostMatches  Match[]    @relation("LostItemMatches")
-  foundMatches Match[]    @relation("FoundItemMatches")
+  reporter     User          @relation(fields: [reportedBy], references: [id])
+  createdAt    DateTime      @default(now())
+  lostMatches  Match[]       @relation("LostItemMatches")
+  foundMatches Match[]       @relation("FoundItemMatches")
+  messages     ChatMessage[]
 }
 
 model Claim {
@@ -131,8 +133,12 @@ model Claim {
 
 model ChatMessage {
   id        String   @id @default(cuid())
-  chatId    String
+  itemId    String
+  item      Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
   senderId  String
+  sender    User @relation("SentMessages", fields: [senderId], references: [id])
+  receiverId String
   content   String
   createdAt DateTime @default(now())
+
 }
