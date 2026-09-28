@@ -13,17 +13,23 @@ datasource db {
 }
 
 model User {
-  id            String        @id @default(cuid())
-  name          String
-  email         String        @unique
-  emailVerified Boolean       @default(false)
-  image         String?
-  items         Item[]
-  sentMessages  ChatMessage[] @relation("SentMessages")
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  sessions      Session[]
-  accounts      Account[]
+  id                   String         @id @default(cuid())
+  name                 String
+  email                String         @unique
+  emailVerified        Boolean        @default(false)
+  image                String?
+  items                Item[]
+  sentMessages         ChatMessage[]  @relation("SentMessages")
+  receivedMessages     ChatMessage[]  @relation("ReceivedMessages")
+  conversationsAsUser1 Conversation[] @relation("User1Conversations")
+  conversationsAsUser2 Conversation[] @relation("User2Conversations")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions Session[]
+  accounts Account[]
+  claims   Claim[]
 
   @@map("user")
 }
@@ -105,40 +111,79 @@ model Match {
 }
 
 model Item {
-  id           String        @id @default(cuid())
-  type         ItemType
-  title        String
-  category     String
-  description  String
-  photoUrl     String?
-  latitude     Float?
-  longitude    Float?
-  status       ItemStatus    @default(OPEN)
-  reportedBy   String
-  reporter     User          @relation(fields: [reportedBy], references: [id])
-  createdAt    DateTime      @default(now())
-  lostMatches  Match[]       @relation("LostItemMatches")
-  foundMatches Match[]       @relation("FoundItemMatches")
-  messages     ChatMessage[]
+  id            String         @id @default(cuid())
+  title         String
+  category      String
+  description   String
+  photoUrl      String?
+  latitude      Float?
+  longitude     Float?
+  type          ItemType //LOST or FOUND
+  status        ItemStatus     @default(OPEN) // OPEN, RESOLVED, CLAIMED
+  reportedBy    String
+  reporter      User           @relation(fields: [reportedBy], references: [id])
+  createdAt     DateTime       @default(now())
+  lostMatches   Match[]        @relation("LostItemMatches")
+  foundMatches  Match[]        @relation("FoundItemMatches")
+  messages      ChatMessage[]
+  claims        Claim[]
+  conversations Conversation[]
 }
 
 model Claim {
   id         String   @id @default(cuid())
+  item       Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
   itemId     String
   claimantId String
+  claimant   User     @relation(fields: [claimantId], references: [id], onDelete: Cascade)
   answers    Json
   verified   Boolean  @default(false)
   createdAt  DateTime @default(now())
+
+  @@index([itemId])
+  @@index([claimantId])
+}
+
+model Conversation {
+  id     String  @id @default(cuid())
+  itemId String?
+  item   Item?   @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  user1Id String
+  user1   User   @relation("User1Conversations", fields: [user1Id], references: [id], onDelete: Cascade)
+
+  user2Id String
+  user2   User   @relation("User2Conversations", fields: [user2Id], references: [id], onDelete: Cascade)
+
+  messages ChatMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([user1Id, user2Id, itemId])
+  @@index([user1Id])
+  @@index([user2Id])
 }
 
 model ChatMessage {
-  id        String   @id @default(cuid())
-  itemId    String
-  item      Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  senderId  String
-  sender    User @relation("SentMessages", fields: [senderId], references: [id])
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  itemId String
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  senderId String
+  sender   User   @relation("SentMessages", fields: [senderId], references: [id])
+
   receiverId String
+  receiver   User   @relation("ReceivedMessages", fields: [receiverId], references: [id])
+
   content   String
+  read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([receiverId])
 }

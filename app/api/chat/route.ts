@@ -4,30 +4,49 @@ import { auth } from "@/lib/auth";
 
 //GET: Specific conversation / item context
 export async function GET(req: Request) {
-    const session = await auth.api.getSession();
-    if (!session?.user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { searchParams } = new URL(req.url);
-    const itemId = searchParams.get("itemId");
-    const otherUserId = searchParams.get("otherUserId");
-
-    if (!itemId || !otherUserId) {
-        return NextResponse.json(
-            { error: "Missing required query parameters: itemId, otherUserId" },
-            { status: 400 },
-        );
-    }
-
     try {
+        const session = await auth.api.getSession();
+        if (!session?.user) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
+        const { searchParams } = new URL(req.url);
+        const conversationId = searchParams.get("conversationId");
+
+        if (!conversationId) {
+            return NextResponse.json(
+                { error: "conversationId query parameter is required" },
+                { status: 400 }
+            );
+        };
+
+        // verify user is a participant in this conversation
+        const conversation = await db.conversation.findUnique({
+            where: { id: conversationId },
+        })
+
+        if (
+            !conversation ||
+            (conversation.user1Id !== session.user.id &&
+                conversation.user2Id !== session.user.id)
+        ) {
+            return NextResponse.json(
+                { error: "Conversation not found or access denied" },
+                { status: 403 }
+            );
+        }
+
+        await db.chatMessage.updateMany({
+            where: {
+                conversationId,
+                receiverId: session.user.id,
+                read: false,
+            },
+            data: { read: true },
+        })
         const message = await db.chatMessage.findMany({
             where: {
-                itemId: itemId,
-                OR: [
-                    { senderId: session.user.id, receiverId: otherUserId },
-                    { senderId: otherUserId, receiverId: session.user.id },
-                ],
+                conversationId
             },
             orderBy: { createdAt: "asc" },
             include: {
@@ -37,7 +56,7 @@ export async function GET(req: Request) {
             },
         });
 
-        return NextResponse.json(message);
+        return NextResponse.json({ message }, { status: 200 });
     } catch (error) {
         console.error("Error fetching messages: ", error);
         return NextResponse.json(
@@ -48,36 +67,96 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-    const session = await auth.api.getSession();
-    if (!session?.user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     try {
-        const body = await req.json();
-        const { itemId, receiverId, content } = body;
+        const session = await auth.api.getSession();
+        if (!session?.user) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
 
-        if (!itemId || !receiverId || !content?.trim()) {
+        const body = await req.json();
+        const { receiverId, itemId, content, conversationId } = body;
+
+        if (!content || content.trim() === "") {
             return NextResponse.json(
                 { error: "Missing required fields" },
                 { status: 400 }
             );
         }
-        const newMessage = await db.chatMessage.create({
-            data: {
-                content: content.trim(),
-                itemId: itemId,
-                senderId: session.user.id,
-                receiverId: receiverId,
-            },
-            include: {
-                sender: {
-                    select: {
-                        id: true, name: true, image: true
+
+        let targetConversationId = conversationId;
+
+        //if conversationID isn't passed directly, find or create one
+        if (!targetConversationId) {
+            if (!receiverId) {
+                return NextResponse.json(
+                    { error: "receiverId is required when conversationId is omitted" },
+                    { status: 400 }
+                );
+            }
+
+            //check for existing conversation between user1 & user2 for the item
+            const existingConversation = await db.conversation.findFirst({
+                where: {
+                    OR: [
+                        { user1Id: session.user.id, user2Id: receiverId, itemId: itemId || null },
+                        { user1Id: receiverId, user2Id: session.user.id, itemId: itemId || null },
+                    ],
+                },
+            });
+
+            if (existingConversation) {
+                targetConversationId = existingConversation.id;
+            } else {
+                // creating new conversation
+                const newConversation = await db.conversation.create({
+                    data: {
+                        user1Id: session.user.id,
+                        user2Id: receiverId,
+                        itemId: itemId || null,
+                    },
+                });
+            }
+
+            // Determine actual receiverId if conversationId was supplied
+            let actualReceiverId = receiverId;
+            if (!actualReceiverId) {
+                const conv = await db.conversation.findUnique({
+                    where: { id: targetConversationId },
+                });
+
+                if (conv) {
+                    actualReceiverId = conv.user1Id == session.user.id ? conv.user2Id : conv.user1Id;
+                }
+            }
+
+            //create the chatmessage
+            const newMessage = await db.chatMessage.create({
+                data: {
+                    conversationId: targetConversationId,
+                    itemId: itemId || null,
+                    senderId: session.user.id,
+                    receiverId: receiverId,
+                    content,
+                },
+                include: {
+                    sender: {
+                        select: {
+                            id: true, name: true, image: true
+                        },
                     },
                 },
-            },
-        });
+            });
+
+            await db.conversation.update({
+                where: { id: targetConversationId },
+                data: { updatedAt: new Date() },
+            })
+
+            return NextResponse.json(
+                { message: newMessage, conversationId: targetConversationId },
+                { status: 201 }
+            );
+        };
     } catch (error) {
         console.error("Error sending message:", error);
         return NextResponse.json(
