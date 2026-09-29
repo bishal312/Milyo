@@ -68,12 +68,29 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
     };
 
     useEffect(() => {
+        if (!conversationId) return;
+
         fetchMessages();
 
-        // Poll messages every 3 seconds
-        const interval = setInterval(fetchMessages, 3000);
-        return () => clearInterval(interval);
-    }, [conversationId]);
+        //connect to SEE stream
+        const eventSource = new EventSource(
+            `/api/chat/stream?conversationId=${conversationId}`
+        );
+
+        eventSource.onmessage = (event) => {
+            try {
+                const incomingMsg = JSON.parse(event.data);
+                setMessages((prev) => {
+                    if (prev.some((m) => m.id === incomingMsg.id)) return prev;
+                    return [...prev, incomingMsg];
+                });
+            } catch (error) {
+                console.error("Error parsing streaming message: ", error);
+            }
+        };
+    })
+
+
 
     useEffect(() => {
         scrollToBottom();
@@ -130,7 +147,7 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
     return (
         <div className="max-w-3xl mx-auto h-[calc(100vh-5rem)] flex flex-col p-4">
             {/* Header */}
-            <ChatItemHeader item={item}/>
+            <ChatItemHeader item={item} />
             <div className="flex items-center justify-between pb-4 border-b border-border">
                 <div className="flex items-center gap-3">
                     <button
@@ -159,8 +176,8 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
                     <div className="flex items-center gap-2">
                         <span
                             className={`text-xs px-2.5 py-1 rounded-full font-medium ${item.status === "RESOLVED"
-                                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                                    : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                                : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
                                 }`}
                         >
                             {item.status}
@@ -204,8 +221,8 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
                             >
                                 <div
                                     className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm ${isMe
-                                            ? "bg-primary text-primary-foreground rounded-br-none"
-                                            : "bg-muted text-foreground rounded-bl-none"
+                                        ? "bg-primary text-primary-foreground rounded-br-none"
+                                        : "bg-muted text-foreground rounded-bl-none"
                                         }`}
                                 >
                                     {msg.content}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { chatEmitter } from "@/lib/chatEvents";
 
 //GET: Specific conversation / item context
 export async function GET(req: Request) {
@@ -150,8 +151,13 @@ export async function POST(req: Request) {
             await db.conversation.update({
                 where: { id: targetConversationId },
                 data: { updatedAt: new Date() },
-            })
+            });
 
+            chatEmitter.emit("message", {
+                conversationId: targetConversationId,
+                message: newMessage,
+            });
+            
             return NextResponse.json(
                 { message: newMessage, conversationId: targetConversationId },
                 { status: 201 }
