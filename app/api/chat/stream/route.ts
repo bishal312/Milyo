@@ -1,16 +1,59 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { chatEmitter } from "@/lib/chatEvents";
+import { db } from "@/lib/db";
+import { auth } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
-export async function GET(req:NextRequest) {
+export async function getValidatedConversation(conversationId: string, userId: string) {
+    const conversation = await db.conversation.findUnique({
+        where: {
+            id: conversationId,
+        },
+        include: {
+            item: true,
+        },
+    });
+
+    if (!conversation) return { error: "Conversation not found", status: 404 };
+
+    const isItemOwner = conversation.item?.reportedBy === userId;
+    const isInitiator =
+        conversation.user1Id === userId ||
+        conversation.user2Id === userId;
+
+    if (!isItemOwner && !isInitiator) {
+        return { error: "Forbidden: You are not a participant", status: 403 };
+    }
+
+    return { conversation };
+}
+
+export async function GET(req: NextRequest) {
+    const session = await auth.api.getSession();
+    if (!session?.user) {
+        return new Response(JSON.stringify({ message: "Unauthorized user" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
     const { searchParams } = new URL(req.url);
     const conversationId = searchParams.get("conversationId");
 
     if (!conversationId) {
-        return new Response("Missing conversationId", { status: 400});
+        return new Response("Missing conversationId", { status: 400 });
     }
 
+    const result = await getValidatedConversation(conversationId, session.user.id);
+    if ("error" in result) {
+        return NextResponse.json(
+            { message: result.error },
+            { status: result.status },
+        )
+    };
+
+    // readablestream
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream({

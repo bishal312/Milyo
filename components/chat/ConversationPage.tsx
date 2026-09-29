@@ -51,9 +51,12 @@ export default function ChatInboxPage() {
   }, []);
 
   const filteredConversations = conversations.filter(
-    (conv) =>
-      conv.partner.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      conv.item?.title.toLowerCase().includes(searchQuery.toLowerCase())
+    (conv) => {
+      const partnerName = conv.partner.name.toLowerCase() || "";
+      const itemTitle = conv.item?.title.toLowerCase();
+      const query = searchQuery.toLowerCase();
+      return partnerName.includes(query) || itemTitle?.includes(query);
+    }
   );
 
   return (
@@ -95,11 +98,10 @@ export default function ChatInboxPage() {
             <Link
               key={conv.id}
               href={`/chat/${conv.id}`}
-              className={`flex items-center justify-between p-4 rounded-xl border transition-all hover:shadow-md ${
-                conv.isUnread
-                  ? "bg-blue-50/60 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800/50"
-                  : "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-gray-300"
-              }`}
+              className={`flex items-center justify-between p-4 rounded-xl border transition-all hover:shadow-md ${conv.isUnread
+                ? "bg-blue-50/60 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800/50"
+                : "bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:border-gray-300"
+                }`}
             >
               <div className="flex items-center gap-4 min-w-0">
                 {/* User Avatar */}
@@ -130,11 +132,10 @@ export default function ChatInboxPage() {
                     </h2>
                     {conv.item && (
                       <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium uppercase ${
-                          conv.item.type === "LOST"
-                            ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
-                            : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
-                        }`}
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-medium uppercase ${conv.item.type === "LOST"
+                          ? "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
+                          : "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+                          }`}
                       >
                         {conv.item.type}: {conv.item.title}
                       </span>
@@ -142,11 +143,10 @@ export default function ChatInboxPage() {
                   </div>
 
                   <p
-                    className={`text-sm truncate mt-1 ${
-                      conv.isUnread
-                        ? "font-semibold text-gray-900 dark:text-white"
-                        : "text-gray-500 dark:text-gray-400"
-                    }`}
+                    className={`text-sm truncate mt-1 ${conv.isUnread
+                      ? "font-semibold text-gray-900 dark:text-white"
+                      : "text-gray-500 dark:text-gray-400"
+                      }`}
                   >
                     {conv.lastMessage?.content || "No messages yet"}
                   </p>

@@ -13,6 +13,7 @@ interface Message {
     senderId: string;
     receiverId: string;
     createdAt: string;
+    read: boolean;
     sender: {
         id: string;
         name?: string | null;
@@ -233,6 +234,23 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
                                         minute: "2-digit",
                                     })}
                                 </span>
+
+                                {/* Timestamp & Read Badge */}
+                                <div className="flex items-center gap-1.5 mt-1 text-[11px] text-gray-400">
+                                    <span>
+                                        {new Date(msg.createdAt).toLocaleTimeString([], {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                        })}
+                                    </span>
+
+                                    {/* Show Read badge only on messages sent by the logged-in user */}
+                                    {isMe && (
+                                        <span className="font-medium text-gray-400 dark:text-gray-500 ml-1">
+                                            • {msg.read ? "Read" : "Sent"}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                         );
                     })
