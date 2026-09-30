@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { auth } from "@/lib/auth";
 
-const ai = new GoogleGenAI({});
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 //Structured json schema for the ai output
 const matchResponseSchema: Schema = {
