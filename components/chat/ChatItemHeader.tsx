@@ -41,7 +41,7 @@ export function ChatItemHeader({ item }: ItemHeaderProps) {
     };
 
     return (
-        <div className="bg-gray-50 dark:bg-gray-800 p-3 px-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <div className="bg-transparent dark:bg-gray-800 p-3 px-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
             <div className="flex items-center gap-2">
                 <span className="font-semibold text-sm text-gray-900 dark:text-white">
                     Item: {item.title}

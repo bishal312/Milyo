@@ -17,6 +17,7 @@ import {
     ShieldCheck,
 } from "lucide-react";
 import axios from "axios";
+import { useRouter } from "next/navigation";
 
 const SingleItemMap = dynamic(() => import("@/components/items/SingleItemMap"), {
     ssr: false,
@@ -45,11 +46,34 @@ interface ItemDetail {
     };
 }
 
+
 export default function ItemDetailPage({ params }: { params: Promise<{ id: string }> }) {
     const { id } = use(params);
     const [item, setItem] = useState<ItemDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const router = useRouter()
+
+    async function handleStartChat() {
+        if (!item?.reporter?.id) return;
+
+        try {
+            const res = await axios.post("/api/chat", {
+                receiverId: item.reporter.id,
+                itemId: item.id,
+            });
+
+            if (res.data?.conversationId) {
+                router.push(`/chat/${res.data.conversationId}`);
+            }
+        } catch (err: any) {
+            if (err.response?.status === 400) {
+                alert(err.response.data.error || "You cannot message yourself about your own item.");
+            } else {
+                console.error("Failed to start chat:", err);
+            }
+        }
+    }
 
     useEffect(() => {
         const fetchItem = async () => {
@@ -116,8 +140,8 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
                         <div className="flex items-center justify-between gap-4">
                             <span
                                 className={`text-xs font-bold px-3 py-1 rounded-full ${item.type === "LOST"
-                                        ? "bg-red-500/10 text-red-600 border border-red-500/20"
-                                        : "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                                    ? "bg-red-500/10 text-red-600 border border-red-500/20"
+                                    : "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
                                     }`}
                             >
                                 {item.type} ITEM
@@ -195,7 +219,8 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
 
                         <div className="space-y-3 pt-2">
                             <button
-                                onClick={() => alert("Real-time Chat socket module coming up next!")}
+                                onClick={handleStartChat}
+                                disabled={!item.reporter?.id}
                                 className="w-full inline-flex items-center justify-center gap-2 bg-primary hover:opacity-90 text-primary-foreground font-medium py-2.5 rounded-lg text-sm transition-opacity shadow-sm"
                             >
                                 <MessageSquare className="w-4 h-4" />

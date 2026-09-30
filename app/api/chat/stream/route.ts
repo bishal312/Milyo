@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { chatEmitter } from "@/lib/chatEvents";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,9 @@ export async function getValidatedConversation(conversationId: string, userId: s
 }
 
 export async function GET(req: NextRequest) {
-    const session = await auth.api.getSession();
+    const session = await auth.api.getSession({
+                headers: await headers(),
+            });
     if (!session?.user) {
         return new Response(JSON.stringify({ message: "Unauthorized user" }), {
             status: 401,

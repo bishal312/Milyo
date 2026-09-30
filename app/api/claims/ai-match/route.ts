@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -67,8 +68,10 @@ async function fetchImageAsPart(url: string) {
 
 export async function POST(req: Request) {
     try {
-        const session = await auth.api.getSession();
-        const currentUser = await session?.user;
+        const session = await auth.api.getSession({
+                    headers: await headers(),
+                });
+        const currentUser = session?.user;
         if (!currentUser) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }

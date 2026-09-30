@@ -179,7 +179,7 @@ model ChatMessage {
   receiverId String
   receiver   User   @relation("ReceivedMessages", fields: [receiverId], references: [id])
 
-  content   String
+  content   String?
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
 

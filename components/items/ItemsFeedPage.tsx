@@ -14,6 +14,8 @@ import {
     MapPin,
     Loader2,
     PackageSearch,
+    AlertCircle,
+    ArrowLeft,
 } from "lucide-react";
 import axios from "axios";
 
@@ -84,6 +86,12 @@ export default function ItemsFeedPage() {
                         Browse active reports or submit a new item to reconnect with its owner.
                     </p>
                 </div>
+                    <Link
+                        href="/dashboard"
+                        className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+                    >
+                        <ArrowLeft className="w-4 h-4" /> Back to dashboard
+                    </Link>
                 <Link
                     href="/items/report"
                     className="inline-flex items-center gap-2 bg-primary hover:opacity-90 text-primary-foreground font-medium px-5 py-2.5 rounded-lg text-sm shadow-sm transition-opacity shrink-0"
@@ -136,22 +144,20 @@ export default function ItemsFeedPage() {
                     <div className="flex items-center border border-border rounded-lg bg-background p-1">
                         <button
                             onClick={() => setViewMode("grid")}
-                            className={`p-1.5 rounded-md text-xs font-medium transition-colors ${
-                                viewMode === "grid"
+                            className={`p-1.5 rounded-md text-xs font-medium transition-colors ${viewMode === "grid"
                                     ? "bg-primary text-primary-foreground shadow-sm"
                                     : "text-muted-foreground hover:text-foreground"
-                            }`}
+                                }`}
                             title="Grid View"
                         >
                             <LayoutGrid className="w-4 h-4" />
                         </button>
                         <button
                             onClick={() => setViewMode("map")}
-                            className={`p-1.5 rounded-md text-xs font-medium transition-colors ${
-                                viewMode === "map"
+                            className={`p-1.5 rounded-md text-xs font-medium transition-colors ${viewMode === "map"
                                     ? "bg-primary text-primary-foreground shadow-sm"
                                     : "text-muted-foreground hover:text-foreground"
-                            }`}
+                                }`}
                             title="Map View"
                         >
                             <MapIcon className="w-4 h-4" />
@@ -186,11 +192,10 @@ export default function ItemsFeedPage() {
                             <div className="space-y-3">
                                 <div className="flex items-center justify-between">
                                     <span
-                                        className={`text-xs font-bold px-2.5 py-1 rounded-full ${
-                                            item.type === "LOST"
+                                        className={`text-xs font-bold px-2.5 py-1 rounded-full ${item.type === "LOST"
                                                 ? "bg-red-500/10 text-red-600 border border-red-500/20"
                                                 : "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                                        }`}
+                                            }`}
                                     >
                                         {item.type}
                                     </span>

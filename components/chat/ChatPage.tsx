@@ -9,7 +9,7 @@ import { ChatItemHeader } from "./ChatItemHeader";
 
 interface Message {
     id: string;
-    content: string;
+    content?: string;
     senderId: string;
     receiverId: string;
     createdAt: string;
@@ -19,6 +19,7 @@ interface Message {
         name?: string | null;
         image?: string | null;
     };
+    deliveryError?: string;
 }
 
 interface ItemDetails {
@@ -40,6 +41,7 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
     const [sending, setSending] = useState(false);
     const [resolving, setResolving] = useState(false);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -47,33 +49,30 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
-    // Fetch conversation messages & metadata
-    const fetchMessages = async () => {
-        if (!conversationId) return;
-        try {
-            const res = await axios.get(`/api/chat?conversationId=${conversationId}`);
-            if (res.data) {
-                setMessages(res.data.messages || []);
-                if (res.data.item) {
-                    setItem(res.data.item);
-                }
-                if (res.data.currentUserId) {
-                    setCurrentUserId(res.data.currentUserId);
-                }
-            }
-        } catch (error) {
-            console.error("Error fetching messages: ", error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
     useEffect(() => {
         if (!conversationId) return;
 
-        fetchMessages();
+        let active = true;
 
-        //connect to SEE stream
+        const fetchMessages = async () => {
+            try {
+                const res = await axios.get(`/api/chat?conversationId=${conversationId}`, {
+                    timeout: 15000,
+                });
+                if (!active) return;
+                setMessages(res.data.messages || []);
+                setItem(res.data.item || null);
+                setCurrentUserId(res.data.currentUserId || null);
+            } catch (error) {
+                console.error("Error fetching messages: ", error);
+            } finally {
+                if (active) setLoading(false);
+            }
+        };
+
+        void fetchMessages();
+
+        // Connect to the message stream for this conversation.
         const eventSource = new EventSource(
             `/api/chat/stream?conversationId=${conversationId}`
         );
@@ -82,14 +81,27 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
             try {
                 const incomingMsg = JSON.parse(event.data);
                 setMessages((prev) => {
-                    if (prev.some((m) => m.id === incomingMsg.id)) return prev;
+                    if (prev.some((message) => message.id === incomingMsg.id)) return prev;
+                    const pendingIndex = prev.findIndex((message) =>
+                        message.id.startsWith("pending-") &&
+                        message.senderId === incomingMsg.senderId &&
+                        message.content === incomingMsg.content
+                    );
+                    if (pendingIndex !== -1) {
+                        return prev.map((message, index) => index === pendingIndex ? incomingMsg : message);
+                    }
                     return [...prev, incomingMsg];
                 });
             } catch (error) {
                 console.error("Error parsing streaming message: ", error);
             }
         };
-    })
+
+        return () => {
+            active = false;
+            eventSource.close();
+        };
+    }, [conversationId]);
 
 
 
@@ -97,31 +109,71 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
         scrollToBottom();
     }, [messages]);
 
-    const handleSendMessage = async (e: React.FormEvent) => {
+    const sendMessage = async (message: Message, isRetry = false) => {
+        setMessages((prev) => isRetry
+            ? prev.map((current) => current.id === message.id ? message : current)
+            : [...prev, message]
+        );
+        setSending(true);
+
+        try {
+            const res = await axios.post(
+                "/api/chat",
+                { conversationId, content: message.content },
+                { timeout: 15000 }
+            );
+
+            if (!res.data?.message) {
+                throw new Error("The server did not confirm the message.");
+            }
+
+            setMessages((prev) =>
+                prev.map((current) => current.id === message.id ? res.data.message : current)
+            );
+        } catch (error) {
+            console.error("Error sending message: ", error);
+            const deliveryError = axios.isAxiosError(error)
+                ? error.code === "ECONNABORTED"
+                    ? "Sending timed out. Check your connection and retry."
+                    : error.response?.data?.error || "Couldn't connect to the server. Check your connection and retry."
+                : error instanceof Error
+                    ? error.message
+                    : "Message could not be sent. Please retry.";
+
+            setMessages((prev) =>
+                prev.map((current) => current.id === message.id
+                    ? { ...current, deliveryError }
+                    : current)
+            );
+        } finally {
+            setSending(false);
+            setRetryingMessageId(null);
+        }
+    };
+
+    const handleSendMessage = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (!newMessage.trim() || sending) return;
 
-        setSending(true);
-        const tempText = newMessage;
+        const content = newMessage.trim();
         setNewMessage("");
+        const optimisticMessage: Message = {
+            id: `pending-${Date.now()}`,
+            content,
+            senderId: currentUserId || "",
+            receiverId: "",
+            createdAt: new Date().toISOString(),
+            read: false,
+            sender: { id: currentUserId || "" },
+        };
+        await sendMessage(optimisticMessage);
+    };
 
-        try {
-            const res = await axios.post("/api/chat", {
-                conversationId,
-                content: tempText,
-            });
-
-            if (res.data && res.data.message) {
-                setMessages((prev) => [...prev, res.data.message]);
-            } else {
-                setNewMessage(tempText);
-            }
-        } catch (error) {
-            console.error("Error sending message: ", error);
-            setNewMessage(tempText);
-        } finally {
-            setSending(false);
-        }
+    const handleRetryMessage = async (message: Message) => {
+        if (sending) return;
+        setRetryingMessageId(message.id);
+        const retryMessage = { ...message, deliveryError: undefined };
+        await sendMessage(retryMessage, true);
     };
 
     const handleMarkAsResolved = async () => {
@@ -148,7 +200,7 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
     return (
         <div className="max-w-3xl mx-auto h-[calc(100vh-5rem)] flex flex-col p-4">
             {/* Header */}
-            <ChatItemHeader item={item} />
+            
             <div className="flex items-center justify-between pb-4 border-b border-border">
                 <div className="flex items-center gap-3">
                     <button
@@ -228,6 +280,25 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
                                 >
                                     {msg.content}
                                 </div>
+                                {isMe && msg.id.startsWith("pending-") && (
+                                    <div className="mt-1 flex items-center gap-2 text-xs text-destructive">
+                                        {msg.deliveryError ? (
+                                            <>
+                                                <span>{msg.deliveryError}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRetryMessage(msg)}
+                                                    disabled={sending || retryingMessageId === msg.id}
+                                                    className="underline disabled:opacity-50"
+                                                >
+                                                    Retry
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <span>{sending ? "Sending..." : "Message queued"}</span>
+                                        )}
+                                    </div>
+                                )}
                                 <span className="text-[10px] text-muted-foreground mt-1 px-1">
                                     {new Date(msg.createdAt).toLocaleTimeString([], {
                                         hour: "2-digit",
@@ -279,6 +350,7 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
                     )}
                 </button>
             </form>
+            <ChatItemHeader item={item} />
         </div>
     );
 }

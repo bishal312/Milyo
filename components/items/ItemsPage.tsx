@@ -6,6 +6,7 @@ import { useMapEvents, MapContainer as LeafletMapContainer, TileLayer as Leaflet
 import { useForm, Controller } from "react-hook-form";
 import {
     AlertCircle,
+    ArrowLeft,
     FileText,
     Loader2,
     MapPin,
@@ -16,6 +17,7 @@ import dynamic from "next/dynamic";
 import { ReportFormValues, reportSchema } from "@/types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { api } from "@/lib/axios";
+import Link from "next/link";
 
 const MapContainer = dynamic(
     () => import("react-leaflet").then((mod) => mod.MapContainer as unknown as typeof LeafletMapContainer),
@@ -58,6 +60,7 @@ export default function ReportItemPage() {
     const {
         register,
         handleSubmit,
+        reset,
         setValue,
         watch,
         control,
@@ -126,6 +129,8 @@ export default function ReportItemPage() {
             const res = await api.post("/items", data);
 
             console.log(res.data);
+            alert("successfully submited")
+            reset()
         } catch (error) {
             console.log(error);
             setError("Something went wrong. Please try again.");
@@ -138,6 +143,12 @@ export default function ReportItemPage() {
         <div className="min-h-screen bg-background text-foreground p-6 md:p-10 max-w-3xl mx-auto space-y-8">
             {/* HEADER */}
             <div className="border-b border-border pb-6">
+                <Link
+                    href="/dashboard"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+                >
+                    <ArrowLeft className="w-4 h-4" /> Back to dashboard
+                </Link>
                 <h1 className="text-3xl font-bold tracking-tight text-foreground font-serif flex items-center gap-3">
                     <PackagePlus className="w-8 h-8 text-primary" />
                     Report an Iteam

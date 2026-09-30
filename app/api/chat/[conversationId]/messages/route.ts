@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 
 export async function GET(
     req: Request,
     { params }: { params: { conversationId: string } }
 ) {
     try {
-        const session = await auth.api.getSession()
+        const session = await auth.api.getSession({
+                    headers: await headers(),
+                })
         const currentUser = session?.user;
 
         if (!currentUser) {

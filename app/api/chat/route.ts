@@ -2,12 +2,15 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { chatEmitter } from "@/lib/chatEvents";
+import { headers } from "next/headers";
 // import { getValidatedConversation } from "./stream/route";
 
 //GET: Specific conversation / item context
 export async function GET(req: Request) {
     try {
-        const session = await auth.api.getSession();
+        const session = await auth.api.getSession({
+            headers: await headers(),
+        });
         if (!session?.user) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
@@ -25,6 +28,11 @@ export async function GET(req: Request) {
         // verify user is a participant in this conversation
         const conversation = await db.conversation.findUnique({
             where: { id: conversationId },
+            include: {
+                item: {
+                    select: { id: true, title: true, type: true, status: true },
+                },
+            },
         })
 
         if (
@@ -58,7 +66,7 @@ export async function GET(req: Request) {
         // };
 
 
-        const message = await db.chatMessage.findMany({
+        const messages = await db.chatMessage.findMany({
             where: {
                 conversationId
             },
@@ -70,7 +78,10 @@ export async function GET(req: Request) {
             },
         });
 
-        return NextResponse.json({ message }, { status: 200 });
+        return NextResponse.json(
+            { messages, item: conversation.item, currentUserId: session.user.id },
+            { status: 200 }
+        );
     } catch (error) {
         console.error("Error fetching messages: ", error);
         return NextResponse.json(
@@ -84,7 +95,9 @@ export async function GET(req: Request) {
 // post
 export async function POST(req: Request) {
     try {
-        const session = await auth.api.getSession();
+        const session = await auth.api.getSession({
+            headers: await headers(),
+        });
         if (!session?.user) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
@@ -92,12 +105,12 @@ export async function POST(req: Request) {
         const body = await req.json();
         const { receiverId, itemId, content, conversationId } = body;
 
-        if (!content || content.trim() === "") {
-            return NextResponse.json(
-                { error: "Missing required fields" },
-                { status: 400 }
-            );
-        }
+        // if (!content || content.trim() === "") {
+        //     return NextResponse.json(
+        //         { error: "Missing required fields" },
+        //         { status: 400 }
+        //     );
+        // }
 
         let targetConversationId = conversationId;
 
@@ -156,35 +169,59 @@ export async function POST(req: Request) {
         }
 
         // Determine actual receiverId if conversationId was supplied
-        let actualReceiverId = conv.user1Id === session.user.id ? conv.user2Id : conv.user1Id;;
+        const actualReceiverId = conv.user1Id === session.user.id ? conv.user2Id : conv.user1Id;
+        const actualItemId = conv.itemId || itemId;
 
-        //create the chatmessage
-        const newMessage = await db.chatMessage.create({
-            data: {
-                conversationId: targetConversationId,
-                itemId: itemId || null,
-                senderId: session.user.id,
-                receiverId: actualReceiverId,
-                content,
-            },
-            include: {
-                sender: {
-                    select: {
-                        id: true, name: true, image: true
+        if (!actualItemId) {
+            return NextResponse.json(
+                { error: "This conversation is not associated with an item." },
+                { status: 400 }
+            );
+        }
+
+        let newMessage = null;
+
+        if (content && content.trim() !== "") {
+            //create the chatmessage
+            newMessage = await db.chatMessage.create({
+                data: {
+                    content,
+                    // Connect the conversation relation
+                    conversation: {
+                        connect: { id: targetConversationId },
+                    },
+                    // Connect the sender relation
+                    sender: {
+                        connect: { id: session.user.id },
+                    },
+                    receiver: {
+                        connect: { id: actualReceiverId },
+                    },
+                    item: {
+                        connect: { id: actualItemId },
                     },
                 },
-            },
-        });
+                include: {
+                    sender: {
+                        select: {
+                            id: true, name: true, image: true
+                        },
+                    },
+                },
+            });
 
-        await db.conversation.update({
-            where: { id: targetConversationId },
-            data: { updatedAt: new Date() },
-        });
+            await db.conversation.update({
+                where: { id: targetConversationId },
+                data: { updatedAt: new Date() },
+            });
 
-        chatEmitter.emit("message", {
-            conversationId: targetConversationId,
-            message: newMessage,
-        });
+            chatEmitter.setMaxListeners(50);
+            chatEmitter.emit("message", {
+                conversationId: targetConversationId,
+                message: newMessage,
+            });
+        }
+
 
         return NextResponse.json(
             { message: newMessage, conversationId: targetConversationId },

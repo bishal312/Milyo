@@ -36,7 +36,7 @@ export function ContactButton({ item, currentUserId }: ItemDetailProps) {
                 throw new Error("Failed to create a find conversation");
             }
 
-            const data = response.data();
+            const data = response.data;
             router.push(`/chat/${data.conversationId}`);
         } catch (error) {
             console.error("Error initiating chat: ", error);
