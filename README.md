@@ -20,6 +20,18 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Admin console
+
+The admin console is available at `/admin`. Set `ADMIN_EMAILS` on the server to a comma-separated list of authorized account email addresses. For the requested administrator, use:
+
+```env
+ADMIN_EMAILS=bishalm626@gmail.com
+```
+
+This value is configured in local `.env.local`. Add the same variable under the Vercel project&apos;s Environment Variables for each deployment environment where admin access is needed, then redeploy. Every admin API request validates the signed-in user&apos;s email against this allowlist.
+
+The console manages users, lost/found items, item categories, claims, matches, AI comparison reports, conversations, and messages. Categories are stored as text on items; renaming a category updates all matching items, while reassigning one moves its items to the selected category. Deleting a user permanently deletes their items and related claims, matches, conversations, and messages.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

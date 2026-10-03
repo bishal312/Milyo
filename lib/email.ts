@@ -1,33 +1,37 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 interface UnreadNotificationParams {
-    toEmail: string;
-    recipientName: string;
-    senderName: string;
-    itemTitle: string;
-    messagePreview: string;
-    conversationId: string;
+  toEmail: string;
+  recipientName: string;
+  senderName: string;
+  itemTitle: string;
+  messagePreview: string;
+  conversationId: string;
 }
 
 export async function sendUnreadMessageEmail({
-    toEmail,
-    recipientName,
-    senderName,
-    itemTitle,
-    messagePreview,
-    conversationId,
+  toEmail,
+  recipientName,
+  senderName,
+  itemTitle,
+  messagePreview,
+  conversationId,
 }: UnreadNotificationParams) {
-    const chatUrl = `${process.env.NEXT_PUBLIC_APP_URL}/chat/${conversationId}`;
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  if (!resend) {
+    console.error("RESEND_API_KEY is missing");
+    return;
+  }
+  const chatUrl = `${process.env.NEXT_PUBLIC_APP_URL}/chat/${conversationId}`;
 
-    try {
-        const data = await resend.emails.send({
-            // from: "Milyo Lost & Found <bishalm626@gmail.com>",
-            from: "Milyo Lost & Found <onboarding@resend.dev>",
-            to: [toEmail],
-            subject: `New message regarding: ${itemTitle}`,
-            html: `
+  try {
+    const data = await resend.emails.send({
+      // from: "Milyo Lost & Found <bishalm626@gmail.com>",
+      from: "Milyo Lost & Found <onboarding@resend.dev>",
+      to: [toEmail],
+      subject: `New message regarding: ${itemTitle}`,
+      html: `
             <!DOCTYPE html>
         <html>
           <body style="font-family: Arial, sans-serif; background-color: #f4f4f5; padding: 20px; color: #18181b;">
@@ -55,11 +59,11 @@ export async function sendUnreadMessageEmail({
           </body>
         </html>
             `
-        });
+    });
 
-        return { success: true, data };
-    } catch (error) {
-        console.error("Failded to send offline email alert: ", error);
-        return { success: false, error };
-    }
+    return { success: true, data };
+  } catch (error) {
+    console.error("Failded to send offline email alert: ", error);
+    return { success: false, error };
+  }
 }
