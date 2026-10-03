@@ -78,6 +78,7 @@ export default function ReportItemPage() {
     const [submitting, setSubmitting] = useState(false);
     const [fetchingLocation, setFetchingLocation] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState<string | null>(null);
     const [photo, setPhoto] = useState<File | null>(null);
     const [photoPreview, setPhotoPreview] = useState<string | null>(null);
     const photoInputRef = useRef<HTMLInputElement>(null);
@@ -160,19 +161,35 @@ export default function ReportItemPage() {
     const onSubmit = async (data: ReportFormValues) => {
         setSubmitting(true);
         setError(null);
+        setSuccess(null);
 
         try {
             const photoUrl = photo ? await readFileAsDataUrl(photo) : null;
-            await api.post("/items", { ...data, photoUrl });
+            const response = await api.post("/items", { ...data, photoUrl });
+            const matching = response.data.matching as {
+                checked: number;
+                created: number;
+                failed: number;
+            };
 
-            alert("successfully submited")
             reset();
             setPhoto(null);
             if (photoInputRef.current) {
                 photoInputRef.current.value = "";
             }
+            setSuccess(
+                matching.created > 0
+                    ? `Report submitted. AI found ${matching.created} potential match${matching.created === 1 ? "" : "es"}; review them on the Matches page.${matching.failed > 0 ? ` ${matching.failed} comparison${matching.failed === 1 ? "" : "s"} could not be completed.` : ""}`
+                    : matching.failed > 0
+                        ? `Report submitted, but ${matching.failed} image comparison${matching.failed === 1 ? " was" : "s were"} unsuccessful.`
+                        : matching.checked > 0
+                            ? "Report submitted. No matching items were found."
+                            : photoUrl
+                                ? "Report submitted. There were no other photo reports to compare yet."
+                                : "Report submitted.",
+            );
         } catch (error) {
-            console.log(error);
+            console.error(error);
             setError("Something went wrong. Please try again.");
         } finally {
             setSubmitting(false);
@@ -202,6 +219,12 @@ export default function ReportItemPage() {
                 <div className="p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm flex items-center gap-3">
                     <AlertCircle className="w-5 h-5 shrink-0" />
                     <span>{error}</span>
+                </div>
+            )}
+
+            {success && (
+                <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-sm">
+                    {success}
                 </div>
             )}
 

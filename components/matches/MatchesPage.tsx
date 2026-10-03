@@ -3,37 +3,48 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight, Check, X } from 'lucide-react';
-import { Match } from '@/lib/generated/prisma/client';
 import axios from 'axios';
 
+interface MatchListItem {
+    id: string;
+    score: number;
+    status: "PENDING" | "CONFIRMED" | "REJECTED";
+    lostItem: { id: string; title: string };
+    foundItem: { id: string; title: string };
+}
+
 export default function MatchesPage() {
-    const [matches, setMatches] = useState<any[]>([]);
+    const [matches, setMatches] = useState<MatchListItem[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         const fetchMatch = async () => {
-            const response = await axios.get("/api/matches");
-
-            if (!response.data) {
-                if (response.status === 404) throw new Error("Item report not found.");
-                throw new Error("Failed to load item details.");
+            try {
+                const response = await axios.get<MatchListItem[]>("/api/matches");
+                setMatches(response.data);
+            } catch (error) {
+                console.error("Failed to load matches:", error);
+                setError("Failed to load matches. Please try again.");
+            } finally {
+                setLoading(false);
             }
-            setMatches(response.data);
-            setLoading(false);
         };
 
         fetchMatch();
     }, []);
 
-    const handleUpdateStatus = async (id: string, status: "ACCEPTED" | "REJECTED") => {
-        await axios.patch(`/api/matches/${id}`, {
-            headers: { 'Content-Type': 'application/json' },
-            data: JSON.stringify({ status }),
-        });
-
-        setMatches((prev) =>
-            prev.map((m) => (m.id === id ? { ...m, status } : m))
-        );
+    const handleUpdateStatus = async (id: string, status: "CONFIRMED" | "REJECTED") => {
+        setError(null);
+        try {
+            await axios.patch(`/api/matches/${id}`, { status });
+            setMatches((prev) =>
+                prev.map((match) => (match.id === id ? { ...match, status } : match))
+            );
+        } catch (error) {
+            console.error("Failed to update match status:", error);
+            setError("Could not update this match. Please try again.");
+        }
     };
 
     if (loading) return <div className='p-6'>Loading</div>;
@@ -41,6 +52,8 @@ export default function MatchesPage() {
     return (
         <div className="max-w-4xl mx-auto p-6">
             <h1 className="text-2xl font-bold mb-6">Potential AI Matches</h1>
+
+            {error && <p className="mb-4 text-sm text-destructive">{error}</p>}
 
             {matches.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground border rounded-xl">
@@ -75,7 +88,7 @@ export default function MatchesPage() {
                                 {match.status === 'PENDING' ? (
                                     <>
                                         <button
-                                            onClick={() => handleUpdateStatus(match.id, 'ACCEPTED')}
+                                            onClick={() => handleUpdateStatus(match.id, 'CONFIRMED')}
                                             className="p-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                                         >
                                             <Check className="w-4 h-4" />

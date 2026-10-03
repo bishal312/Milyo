@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import axios from "axios";
 import { Client } from "@upstash/qstash"
 
 export async function POST(req: Request) {

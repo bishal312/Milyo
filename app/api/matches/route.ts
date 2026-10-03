@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 
-export async function GET(req: Request) {
+export async function GET() {
     const session = await auth.api.getSession(
         { headers: await headers() }
     );
@@ -19,9 +19,17 @@ export async function GET(req: Request) {
                 { foundItem: { reportedBy: session.user.id}},
             ],
         },
-        include: {
-            lostItem: true,
-            foundItem: true,
+        select: {
+            id: true,
+            score: true,
+            status: true,
+            createdAt: true,
+            lostItem: {
+                select: { id: true, title: true },
+            },
+            foundItem: {
+                select: { id: true, title: true },
+            },
         },
         orderBy: { createdAt: "desc"},
     });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { processAIComparison } from "@/lib/process-ai-comparison";
 
 const MAX_PHOTO_SIZE_BYTES = 3 * 1024 * 1024;
 
@@ -75,8 +76,132 @@ export async function POST(req: NextRequest) {
                 status: "OPEN",
             }
         });
+        const itemResponse = {
+            id: newItem.id,
+            title: newItem.title,
+            description: newItem.description,
+            category: newItem.category,
+            type: newItem.type,
+            latitude: newItem.latitude,
+            longitude: newItem.longitude,
+            status: newItem.status,
+            createdAt: newItem.createdAt,
+        };
 
-        return NextResponse.json(newItem, { status: 201 });
+        const newPhotoUrl = newItem.photoUrl;
+        if (!newPhotoUrl) {
+            return NextResponse.json(
+                { item: itemResponse, matching: { checked: 0, created: 0, failed: 0 } },
+                { status: 201 },
+            );
+        }
+
+        const oppositeType = newItem.type === "LOST" ? "FOUND" : "LOST";
+        let candidates: {
+            id: string;
+            title: string;
+            description: string;
+            category: string;
+            type: "LOST" | "FOUND";
+            photoUrl: string | null;
+        }[] = [];
+        let createdMatches = 0;
+        let failedComparisons = 0;
+
+        try {
+            candidates = await db.item.findMany({
+                where: {
+                    type: oppositeType,
+                    status: "OPEN",
+                    photoUrl: { not: null },
+                    reportedBy: { not: session.user.id },
+                },
+                select: {
+                    id: true,
+                    title: true,
+                    description: true,
+                    category: true,
+                    type: true,
+                    photoUrl: true,
+                },
+            });
+        } catch (error) {
+            console.error("Failed to load items for AI matching:", error);
+            failedComparisons = 1;
+        }
+
+        for (let index = 0; index < candidates.length; index += 3) {
+            const batch = candidates.slice(index, index + 3);
+            const results = await Promise.all(batch.map(async (candidate) => {
+                const lostItemId = newItem.type === "LOST" ? newItem.id : candidate.id;
+                const foundItemId = newItem.type === "FOUND" ? newItem.id : candidate.id;
+                let reportId: string | null = null;
+
+                try {
+                    const existingReport = await db.aIComparisonReport.findUnique({
+                        where: { lostItemId_foundItemId: { lostItemId, foundItemId } },
+                        select: { id: true },
+                    });
+                    if (existingReport) {
+                        return "skipped" as const;
+                    }
+
+                    if (!candidate.photoUrl) {
+                        return "skipped" as const;
+                    }
+
+                    const report = await db.aIComparisonReport.create({
+                        data: { lostItemId, foundItemId },
+                        select: { id: true },
+                    });
+                    reportId = report.id;
+
+                    const result = await processAIComparison(
+                        report.id,
+                        newItem.type === "LOST" ? newItem : candidate,
+                        newItem.type === "FOUND" ? newItem : candidate,
+                    );
+                    if (result === "FAILED") {
+                        return "failed" as const;
+                    }
+                    if (result === "MATCH") {
+                        return "created" as const;
+                    }
+                    return "not-matched" as const;
+                } catch (error) {
+                    console.error(`AI comparison failed for item ${candidate.id}:`, error);
+                    if (reportId) {
+                        try {
+                            await db.aIComparisonReport.update({
+                                where: { id: reportId },
+                                data: {
+                                    status: "FAILED",
+                                    reasoning: "The AI comparison could not be completed.",
+                                },
+                            });
+                        } catch (reportError) {
+                            console.error(`Failed to save AI comparison failure for item ${candidate.id}:`, reportError);
+                        }
+                    }
+                    return "failed" as const;
+                }
+            }));
+
+            createdMatches += results.filter((result) => result === "created").length;
+            failedComparisons += results.filter((result) => result === "failed").length;
+        }
+
+        return NextResponse.json(
+            {
+                item: itemResponse,
+                matching: {
+                    checked: candidates.length,
+                    created: createdMatches,
+                    failed: failedComparisons,
+                },
+            },
+            { status: 201 },
+        );
     } catch (error) {
         console.error("Error creating item:", error);
         return NextResponse.json({

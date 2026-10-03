@@ -19,6 +19,7 @@ import type { Item, ItemStatus, Match } from "@/lib/generated/prisma/client";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { LogOutButton } from "../auth/LogOutButton";
+import AIComparisonReports from "./AIComparisonReports";
 
 // types for the merged activity feed
 type ActivityEntry = {
@@ -79,6 +80,7 @@ export default async function DashboardPage() {
         pendingMatches,
         recentItems,
         recentMatches,
+        recentAIReports,
     ] = await Promise.all([
         // 1. activeReportsCount
         db.item.count({
@@ -125,9 +127,16 @@ export default async function DashboardPage() {
                     { foundItem: { reportedBy: userId } },
                 ],
             },
-            include: {
-                lostItem: true,
-                foundItem: true,
+            select: {
+                id: true,
+                score: true,
+                status: true,
+                lostItem: {
+                    select: { id: true, title: true, reportedBy: true, latitude: true, longitude: true },
+                },
+                foundItem: {
+                    select: { id: true, title: true, reportedBy: true, latitude: true, longitude: true },
+                },
             },
             orderBy: {
                 score: "desc",
@@ -142,6 +151,13 @@ export default async function DashboardPage() {
             },
             orderBy: { createdAt: "desc" },
             take: 4,
+            select: {
+                id: true,
+                title: true,
+                type: true,
+                status: true,
+                createdAt: true,
+            },
         }),
 
         // 7. recentMatches
@@ -152,12 +168,46 @@ export default async function DashboardPage() {
                     { foundItem: { reportedBy: userId } },
                 ],
             },
-            include: {
-                lostItem: true,
-                foundItem: true,
+            select: {
+                id: true,
+                status: true,
+                createdAt: true,
+                lostItem: {
+                    select: { title: true },
+                },
+                foundItem: {
+                    select: { title: true },
+                },
             },
             orderBy: { createdAt: "desc" },
             take: 4,
+        }),
+
+        db.aIComparisonReport.findMany({
+            where: {
+                OR: [
+                    { lostItem: { reportedBy: userId } },
+                    { foundItem: { reportedBy: userId } },
+                ],
+            },
+            select: {
+                id: true,
+                status: true,
+                score: true,
+                confidenceLevel: true,
+                reasoning: true,
+                keyMatchingFeatures: true,
+                discrepancies: true,
+                createdAt: true,
+                lostItem: {
+                    select: { id: true, title: true },
+                },
+                foundItem: {
+                    select: { id: true, title: true },
+                },
+            },
+            orderBy: { createdAt: "desc" },
+            take: 8,
         }),
     ]);
 
@@ -318,6 +368,8 @@ export default async function DashboardPage() {
                             </div>
                         )}
                     </div>
+
+                    <AIComparisonReports initialReports={recentAIReports} />
 
                     {/* My Recent Items Section */}
                     <div className="bg-card rounded-xl border border-border shadow-sm p-6">

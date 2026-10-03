@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Send, Loader2, CheckCircle2 } from "lucide-react";
 import axios from "axios";
-import { ChatItemHeader } from "./ChatItemHeader";
 
 interface Message {
     id: string;
@@ -29,87 +28,221 @@ interface ItemDetails {
     status: "OPEN" | "RESOLVED" | "CLAIMED" | "MATCHED";
 }
 
+interface ChatPartner {
+    id: string;
+    name: string | null;
+    image: string | null;
+}
+
 export default function ChatPage({ params }: { params: Promise<{ id: string }> }) {
     const resolvedParams = use(params);
-    const conversationId = resolvedParams.id;
+    return (
+        <ChatConversation
+            key={resolvedParams.id}
+            conversationId={resolvedParams.id}
+        />
+    );
+}
+
+function ChatConversation({ conversationId }: { conversationId: string }) {
     const router = useRouter();
 
     const [messages, setMessages] = useState<Message[]>([]);
     const [item, setItem] = useState<ItemDetails | null>(null);
+    const [partner, setPartner] = useState<ChatPartner | null>(null);
     const [newMessage, setNewMessage] = useState("");
     const [loading, setLoading] = useState(true);
+    const [historyError, setHistoryError] = useState<string | null>(null);
+    const [historyRetry, setHistoryRetry] = useState(0);
+    const [isPageVisible, setIsPageVisible] = useState(false);
+    const [hasNewMessages, setHasNewMessages] = useState(false);
     const [sending, setSending] = useState(false);
     const [resolving, setResolving] = useState(false);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [currentUserName, setCurrentUserName] = useState<string | null>(null);
     const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null);
 
-    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const messageListRef = useRef<HTMLDivElement>(null);
+    const shouldStickToBottomRef = useRef(true);
+    const previousMessageCountRef = useRef(0);
+    const pendingMessageSequenceRef = useRef(0);
 
     const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        const messageList = messageListRef.current;
+        if (!messageList) return;
+
+        messageList.scrollTo({
+            top: messageList.scrollHeight,
+            behavior: "smooth",
+        });
+        shouldStickToBottomRef.current = true;
     };
 
     useEffect(() => {
         if (!conversationId) return;
 
         let active = true;
+        let fetching = false;
 
         const fetchMessages = async () => {
+            if (fetching) return;
+            fetching = true;
+
             try {
                 const res = await axios.get(`/api/chat?conversationId=${conversationId}`, {
                     timeout: 15000,
                 });
                 if (!active) return;
-                setMessages(res.data.messages || []);
+                const persistedMessages: Message[] = res.data.messages || [];
+                setMessages((currentMessages) => {
+                    const pendingMessages = currentMessages.filter(
+                        (message) => message.id.startsWith("pending-"),
+                    );
+                    const nextMessages = [
+                        ...persistedMessages,
+                        ...pendingMessages.filter(
+                            (pending) =>
+                                !persistedMessages.some(
+                                    (persisted) => persisted.id === pending.id,
+                                ),
+                        ),
+                    ];
+                    const unchanged =
+                        currentMessages.length === nextMessages.length &&
+                        currentMessages.every((message, index) => {
+                            const nextMessage = nextMessages[index];
+                            return (
+                                message.id === nextMessage.id &&
+                                message.content === nextMessage.content &&
+                                message.senderId === nextMessage.senderId &&
+                                message.receiverId === nextMessage.receiverId &&
+                                message.createdAt === nextMessage.createdAt &&
+                                message.read === nextMessage.read &&
+                                message.sender.name === nextMessage.sender.name
+                            );
+                        });
+
+                    return unchanged ? currentMessages : nextMessages;
+                });
                 setItem(res.data.item || null);
+                setPartner(res.data.partner || null);
                 setCurrentUserId(res.data.currentUserId || null);
+                setCurrentUserName(res.data.currentUserName || null);
+                setHistoryError(null);
             } catch (error) {
                 console.error("Error fetching messages: ", error);
+                if (active) {
+                    setHistoryError("We couldn't load this conversation. Please try again.");
+                }
             } finally {
+                fetching = false;
                 if (active) setLoading(false);
             }
         };
 
         void fetchMessages();
+        // Database polling is the source-of-truth fallback when users are
+        // connected to different server processes and cannot share the SSE emitter.
+        const refreshInterval = window.setInterval(() => {
+            void fetchMessages();
+        }, 3000);
 
         // Connect to the message stream for this conversation.
         const eventSource = new EventSource(
             `/api/chat/stream?conversationId=${conversationId}`
         );
 
-        eventSource.onmessage = (event) => {
-            try {
-                const incomingMsg = JSON.parse(event.data);
-                setMessages((prev) => {
-                    if (prev.some((message) => message.id === incomingMsg.id)) return prev;
-                    const pendingIndex = prev.findIndex((message) =>
-                        message.id.startsWith("pending-") &&
-                        message.senderId === incomingMsg.senderId &&
-                        message.content === incomingMsg.content
-                    );
-                    if (pendingIndex !== -1) {
-                        return prev.map((message, index) => index === pendingIndex ? incomingMsg : message);
-                    }
-                    return [...prev, incomingMsg];
-                });
-            } catch (error) {
-                console.error("Error parsing streaming message: ", error);
-            }
-        };
+        eventSource.onmessage = () => void fetchMessages();
 
         return () => {
             active = false;
+            window.clearInterval(refreshInterval);
             eventSource.close();
         };
-    }, [conversationId]);
-
-
+    }, [conversationId, historyRetry]);
 
     useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
+        if (
+            loading ||
+            !currentUserId ||
+            !isPageVisible ||
+            !messages.some(
+                (message) => message.receiverId === currentUserId && !message.read,
+            )
+        ) {
+            return;
+        }
+
+        let active = true;
+        const markMessagesRead = async () => {
+            try {
+                const response = await axios.post("/api/chat/read", { conversationId });
+                if (active && response.status === 200) {
+                    setMessages((currentMessages) =>
+                        currentMessages.map((message) =>
+                            message.receiverId === currentUserId
+                                ? { ...message, read: true }
+                                : message,
+                        ),
+                    );
+                }
+            } catch (error) {
+                console.error("Error marking messages as read:", error);
+            }
+        };
+
+        void markMessagesRead();
+        return () => {
+            active = false;
+        };
+    }, [conversationId, currentUserId, isPageVisible, loading, messages]);
+
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            setIsPageVisible(document.visibilityState === "visible");
+        };
+
+        handleVisibilityChange();
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        return () => {
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+        };
+    }, []);
+
+
+
+    const handleMessageListScroll = () => {
+        const messageList = messageListRef.current;
+        if (!messageList) return;
+
+        const distanceFromBottom =
+            messageList.scrollHeight -
+            messageList.scrollTop -
+            messageList.clientHeight;
+        shouldStickToBottomRef.current = distanceFromBottom < 120;
+        if (shouldStickToBottomRef.current) {
+            setHasNewMessages(false);
+        }
+    };
+
+    useEffect(() => {
+        if (loading) return;
+
+        const previousMessageCount = previousMessageCountRef.current;
+        if (
+            previousMessageCount === 0 ||
+            (messages.length > previousMessageCount &&
+                shouldStickToBottomRef.current)
+        ) {
+            scrollToBottom();
+        } else if (messages.length > previousMessageCount) {
+            setHasNewMessages(true);
+        }
+        previousMessageCountRef.current = messages.length;
+    }, [loading, messages.length]);
 
     const sendMessage = async (message: Message, isRetry = false) => {
+        shouldStickToBottomRef.current = true;
         setMessages((prev) => isRetry
             ? prev.map((current) => current.id === message.id ? message : current)
             : [...prev, message]
@@ -127,9 +260,13 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
                 throw new Error("The server did not confirm the message.");
             }
 
-            setMessages((prev) =>
-                prev.map((current) => current.id === message.id ? res.data.message : current)
-            );
+            setMessages((prev) => [
+                ...prev.filter(
+                    (current) =>
+                        current.id !== message.id && current.id !== res.data.message.id,
+                ),
+                res.data.message,
+            ]);
         } catch (error) {
             console.error("Error sending message: ", error);
             const deliveryError = axios.isAxiosError(error)
@@ -158,7 +295,7 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
         const content = newMessage.trim();
         setNewMessage("");
         const optimisticMessage: Message = {
-            id: `pending-${Date.now()}`,
+            id: `pending-${++pendingMessageSequenceRef.current}`,
             content,
             senderId: currentUserId || "",
             receiverId: "",
@@ -211,8 +348,13 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
                     </button>
                     <div>
                         <h1 className="text-lg font-bold">
-                            {item ? `${item.type}: ${item.title}` : "Discussion"}
+                            {partner?.name || "Conversation"}
                         </h1>
+                        {item && (
+                            <p className="text-xs text-muted-foreground">
+                                {item.type}: {item.title}
+                            </p>
+                        )}
                         {item && (
                             <Link
                                 href={`/items/${item.id}`}
@@ -255,78 +397,165 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
             </div>
 
             {/* Message List */}
-            <div className="flex-1 overflow-y-auto py-4 space-y-3">
+            <div
+                ref={messageListRef}
+                onScroll={handleMessageListScroll}
+                className="min-h-0 flex-1 overflow-y-auto py-4 space-y-3"
+            >
                 {loading ? (
                     <div className="flex justify-center py-10 text-muted-foreground">
                         <Loader2 className="w-6 h-6 animate-spin" />
                     </div>
                 ) : messages.length === 0 ? (
                     <div className="text-center py-10 text-xs text-muted-foreground">
-                        No messages yet. Send a message to coordinate!
+                        {historyError ? (
+                            <div className="space-y-2">
+                                <p>{historyError}</p>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setHistoryError(null);
+                                        setLoading(true);
+                                        setHistoryRetry((retry) => retry + 1);
+                                    }}
+                                    className="font-medium text-primary underline"
+                                >
+                                    Retry loading messages
+                                </button>
+                            </div>
+                        ) : (
+                            "No messages yet. Send a message to coordinate!"
+                        )}
                     </div>
                 ) : (
-                    messages.map((msg) => {
-                        const isMe = currentUserId ? msg.senderId === currentUserId : msg.senderId !== item?.id;
+                    messages.map((msg, index) => {
+                        const isMe =
+                            msg.id.startsWith("pending-") ||
+                            (currentUserId !== null && msg.senderId === currentUserId);
+                        const participantIds = [currentUserId, partner?.id]
+                            .filter((id): id is string => Boolean(id))
+                            .sort();
+                        const senderColorIndex = participantIds.indexOf(msg.senderId);
+                        const senderColors =
+                            senderColorIndex === 1
+                                ? {
+                                      bubble: "bg-emerald-600 text-white",
+                                      label: "text-emerald-700 dark:text-emerald-300",
+                                  }
+                                : {
+                                      bubble: "bg-indigo-600 text-white",
+                                      label: "text-indigo-700 dark:text-indigo-300",
+                                  };
+                        const senderName = isMe
+                            ? `${currentUserName || msg.sender.name || "You"} (You)`
+                            : msg.sender.name || partner?.name || "Other user";
+                        const messageDate = new Date(msg.createdAt);
+                        const previousMessage = messages[index - 1];
+                        const startsNewDay =
+                            !previousMessage ||
+                            new Date(previousMessage.createdAt).toDateString() !==
+                                messageDate.toDateString();
+                        const today = new Date();
+                        const yesterday = new Date();
+                        yesterday.setDate(today.getDate() - 1);
+                        const dateLabel =
+                            messageDate.toDateString() === today.toDateString()
+                                ? "Today"
+                                : messageDate.toDateString() === yesterday.toDateString()
+                                  ? "Yesterday"
+                                  : messageDate.toLocaleDateString([], {
+                                        month: "long",
+                                        day: "numeric",
+                                        year: "numeric",
+                                    });
                         return (
-                            <div
-                                key={msg.id}
-                                className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
-                            >
-                                <div
-                                    className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm ${isMe
-                                        ? "bg-primary text-primary-foreground rounded-br-none"
-                                        : "bg-muted text-foreground rounded-bl-none"
-                                        }`}
-                                >
-                                    {msg.content}
-                                </div>
-                                {isMe && msg.id.startsWith("pending-") && (
-                                    <div className="mt-1 flex items-center gap-2 text-xs text-destructive">
-                                        {msg.deliveryError ? (
-                                            <>
-                                                <span>{msg.deliveryError}</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleRetryMessage(msg)}
-                                                    disabled={sending || retryingMessageId === msg.id}
-                                                    className="underline disabled:opacity-50"
-                                                >
-                                                    Retry
-                                                </button>
-                                            </>
-                                        ) : (
-                                            <span>{sending ? "Sending..." : "Message queued"}</span>
-                                        )}
+                            <div key={msg.id} className="space-y-2">
+                                {startsNewDay && (
+                                    <div className="flex justify-center py-2">
+                                        <span className="rounded-full bg-muted px-3 py-1 text-[11px] font-medium text-muted-foreground">
+                                            {dateLabel}
+                                        </span>
                                     </div>
                                 )}
-                                <span className="text-[10px] text-muted-foreground mt-1 px-1">
-                                    {new Date(msg.createdAt).toLocaleTimeString([], {
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                    })}
-                                </span>
-
-                                {/* Timestamp & Read Badge */}
-                                <div className="flex items-center gap-1.5 mt-1 text-[11px] text-gray-400">
-                                    <span>
-                                        {new Date(msg.createdAt).toLocaleTimeString([], {
-                                            hour: "2-digit",
-                                            minute: "2-digit",
-                                        })}
+                                <div
+                                    className={`flex flex-col ${
+                                        isMe ? "items-end" : "items-start"
+                                    }`}
+                                >
+                                    <span
+                                        className={`mb-1 px-1 text-xs font-semibold ${senderColors.label}`}
+                                    >
+                                        {senderName}
                                     </span>
-
-                                    {/* Show Read badge only on messages sent by the logged-in user */}
-                                    {isMe && (
-                                        <span className="font-medium text-gray-400 dark:text-gray-500 ml-1">
-                                            • {msg.read ? "Read" : "Sent"}
-                                        </span>
+                                    <div
+                                        className={`max-w-[75%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm ${senderColors.bubble} ${
+                                            isMe
+                                                ? "rounded-br-none"
+                                                : "rounded-bl-none"
+                                        }`}
+                                    >
+                                        {msg.content}
+                                    </div>
+                                    {isMe && msg.id.startsWith("pending-") && (
+                                        <div className="mt-1 flex items-center gap-2 text-xs text-destructive">
+                                            {msg.deliveryError ? (
+                                                <>
+                                                    <span>{msg.deliveryError}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRetryMessage(msg)}
+                                                        disabled={
+                                                            sending ||
+                                                            retryingMessageId === msg.id
+                                                        }
+                                                        className="underline disabled:opacity-50"
+                                                    >
+                                                        Retry
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <span>
+                                                    {sending
+                                                        ? "Sending..."
+                                                        : "Message queued"}
+                                                </span>
+                                            )}
+                                        </div>
                                     )}
+                                    <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                                        <span>
+                                            {messageDate.toLocaleTimeString([], {
+                                                hour: "2-digit",
+                                                minute: "2-digit",
+                                            })}
+                                        </span>
+
+                                        {isMe && (
+                                            <span className="ml-1 font-medium text-gray-400 dark:text-gray-500">
+                                                • {msg.read ? "Read" : "Sent"}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         );
                     })
                 )}
-                <div ref={messagesEndRef} />
+                {hasNewMessages && (
+                    <div className="sticky bottom-3 flex justify-center">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                shouldStickToBottomRef.current = true;
+                                setHasNewMessages(false);
+                                scrollToBottom();
+                            }}
+                            className="rounded-full bg-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-lg"
+                        >
+                            New messages ↓
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Input Form */}
@@ -350,7 +579,6 @@ export default function ChatPage({ params }: { params: Promise<{ id: string }> }
                     )}
                 </button>
             </form>
-            <ChatItemHeader item={item} />
         </div>
     );
 }

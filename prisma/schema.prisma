@@ -99,6 +99,13 @@ enum ItemStatus {
   RESOLVED
 }
 
+enum AIComparisonStatus {
+  PENDING
+  MATCH
+  NO_MATCH
+  FAILED
+}
+
 model Match {
   id          String      @id @default(cuid())
   lostItemId  String
@@ -110,24 +117,45 @@ model Match {
   foundItem   Item        @relation("FoundItemMatches", fields: [foundItemId], references: [id])
 }
 
+model AIComparisonReport {
+  id                  String             @id @default(cuid())
+  lostItemId          String
+  foundItemId         String
+  status              AIComparisonStatus @default(PENDING)
+  score               Float?
+  confidenceLevel     String?
+  reasoning           String?
+  keyMatchingFeatures Json?
+  discrepancies       Json?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  lostItem            Item               @relation("AIComparisonLostItem", fields: [lostItemId], references: [id], onDelete: Cascade)
+  foundItem           Item               @relation("AIComparisonFoundItem", fields: [foundItemId], references: [id], onDelete: Cascade)
+
+  @@unique([lostItemId, foundItemId])
+  @@index([createdAt])
+}
+
 model Item {
-  id            String         @id @default(cuid())
-  title         String
-  category      String
-  description   String
-  photoUrl      String?
-  latitude      Float?
-  longitude     Float?
-  type          ItemType //LOST or FOUND
-  status        ItemStatus     @default(OPEN) // OPEN, RESOLVED, CLAIMED
-  reportedBy    String
-  reporter      User           @relation(fields: [reportedBy], references: [id])
-  createdAt     DateTime       @default(now())
-  lostMatches   Match[]        @relation("LostItemMatches")
-  foundMatches  Match[]        @relation("FoundItemMatches")
-  messages      ChatMessage[]
-  claims        Claim[]
-  conversations Conversation[]
+  id                   String               @id @default(cuid())
+  title                String
+  category             String
+  description          String
+  photoUrl             String?
+  latitude             Float?
+  longitude            Float?
+  type                 ItemType //LOST or FOUND
+  status               ItemStatus           @default(OPEN) // OPEN, RESOLVED, CLAIMED
+  reportedBy           String
+  reporter             User                 @relation(fields: [reportedBy], references: [id])
+  createdAt            DateTime             @default(now())
+  lostMatches          Match[]              @relation("LostItemMatches")
+  foundMatches         Match[]              @relation("FoundItemMatches")
+  aiComparisonsAsLost  AIComparisonReport[] @relation("AIComparisonLostItem")
+  aiComparisonsAsFound AIComparisonReport[] @relation("AIComparisonFoundItem")
+  messages             ChatMessage[]
+  claims               Claim[]
+  conversations        Conversation[]
 }
 
 model Claim {

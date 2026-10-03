@@ -33,21 +33,37 @@ export default function ChatInboxPage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   useEffect(() => {
+    let active = true;
+
     async function fetchConversations() {
       try {
         const res = await fetch("/api/chat/conversations");
-        if (res.ok) {
-          const data = await res.json();
+        if (!res.ok) {
+          throw new Error(`Failed to load conversations (${res.status})`);
+        }
+
+        const data = await res.json();
+        if (active) {
           setConversations(data.conversations || []);
         }
-      } catch (err) {
-        console.error("Error loading conversations:", err);
+      } catch (error) {
+        console.error("Error loading conversations:", error);
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+        }
       }
     }
 
-    fetchConversations();
+    void fetchConversations();
+    const refreshInterval = window.setInterval(() => {
+      void fetchConversations();
+    }, 10000);
+
+    return () => {
+      active = false;
+      window.clearInterval(refreshInterval);
+    };
   }, []);
 
   const filteredConversations = conversations.filter(

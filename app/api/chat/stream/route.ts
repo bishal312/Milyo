@@ -62,8 +62,14 @@ export async function GET(req: NextRequest) {
     const stream = new ReadableStream({
         start(controller) {
             // Listener callback when a new message arrives
-            const onMessage = (data: any) => {
-                if (data.conversationId === conversationId) {
+            const onMessage = (data: unknown) => {
+                if (
+                    typeof data === "object" &&
+                    data !== null &&
+                    "conversationId" in data &&
+                    data.conversationId === conversationId &&
+                    "message" in data
+                ) {
                     controller.enqueue(
                         encoder.encode(`data: ${JSON.stringify(data.message)}\n\n`)
                     );

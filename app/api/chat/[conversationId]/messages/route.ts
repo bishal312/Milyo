@@ -4,8 +4,8 @@ import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 
 export async function GET(
-    req: Request,
-    { params }: { params: { conversationId: string } }
+    _req: Request,
+    { params }: { params: Promise<{ conversationId: string }> }
 ) {
     try {
         const session = await auth.api.getSession({
@@ -17,21 +17,22 @@ export async function GET(
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const { conversationId } = params;
-
-        // mark all unread messages received by the current user as read
-        await db.chatMessage.updateMany({
-            where: {
-                conversationId,
-                receiverId: currentUser.id,
-                read: false,
-            },
-            data: {
-                read: true,
-            }
+        const { conversationId } = await params;
+        const conversation = await db.conversation.findUnique({
+            where: { id: conversationId },
+            select: { user1Id: true, user2Id: true },
         });
+        if (
+            !conversation ||
+            (conversation.user1Id !== currentUser.id &&
+                conversation.user2Id !== currentUser.id)
+        ) {
+            return NextResponse.json(
+                { error: "Conversation not found or access denied" },
+                { status: 403 },
+            );
+        }
 
-        // fetcj cpmversatopm ,essages
         const messages = await db.chatMessage.findMany({
             where: { conversationId },
             orderBy: { createdAt: "asc" },

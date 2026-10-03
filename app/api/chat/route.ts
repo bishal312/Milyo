@@ -29,6 +29,12 @@ export async function GET(req: Request) {
         const conversation = await db.conversation.findUnique({
             where: { id: conversationId },
             include: {
+                user1: {
+                    select: { id: true, name: true, image: true },
+                },
+                user2: {
+                    select: { id: true, name: true, image: true },
+                },
                 item: {
                     select: { id: true, title: true, type: true, status: true },
                 },
@@ -46,31 +52,29 @@ export async function GET(req: Request) {
             );
         }
 
-        // mark incoming unread messages for current user as read
-        await db.chatMessage.updateMany({
+        const relatedConversations = await db.conversation.findMany({
             where: {
-                conversationId,
-                receiverId: session.user.id,
-                read: false,
+                itemId: conversation.itemId,
+                OR: [
+                    {
+                        user1Id: conversation.user1Id,
+                        user2Id: conversation.user2Id,
+                    },
+                    {
+                        user1Id: conversation.user2Id,
+                        user2Id: conversation.user1Id,
+                    },
+                ],
             },
-            data: { read: true },
+            select: { id: true },
         });
-
-
-        // const result = await getValidatedConversation(conversationId, session.user.id);
-        // if ("error" in result) {
-        //     return NextResponse.json(
-        //         { message: result.error },
-        //         { status: result.status },
-        //     )
-        // };
-
+        const relatedConversationIds = relatedConversations.map(({ id }) => id);
 
         const messages = await db.chatMessage.findMany({
             where: {
-                conversationId
+                conversationId: { in: relatedConversationIds },
             },
-            orderBy: { createdAt: "asc" },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
             include: {
                 sender: {
                     select: { id: true, name: true, image: true },
@@ -79,8 +83,20 @@ export async function GET(req: Request) {
         });
 
         return NextResponse.json(
-            { messages, item: conversation.item, currentUserId: session.user.id },
-            { status: 200 }
+            {
+                messages,
+                item: conversation.item,
+                partner:
+                    conversation.user1Id === session.user.id
+                        ? conversation.user2
+                        : conversation.user1,
+                currentUserId: session.user.id,
+                currentUserName: session.user.name,
+            },
+            {
+                status: 200,
+                headers: { "Cache-Control": "no-store, max-age=0" },
+            }
         );
     } catch (error) {
         console.error("Error fetching messages: ", error);
@@ -136,15 +152,28 @@ export async function POST(req: Request) {
             if (existingConversation) {
                 targetConversationId = existingConversation.id;
             } else {
-                // creating new conversation
-                const newConversation = await db.conversation.create({
-                    data: {
-                        user1Id: session.user.id,
-                        user2Id: receiverId,
-                        itemId: itemId || null,
-                    },
-                });
-                targetConversationId = newConversation.id;
+                const [user1Id, user2Id] = [session.user.id, receiverId].sort();
+                try {
+                    const newConversation = await db.conversation.create({
+                        data: {
+                            user1Id,
+                            user2Id,
+                            itemId: itemId || null,
+                        },
+                    });
+                    targetConversationId = newConversation.id;
+                } catch (createError) {
+                    const concurrentConversation = await db.conversation.findFirst({
+                        where: {
+                            OR: [
+                                { user1Id, user2Id, itemId: itemId || null },
+                                { user1Id: user2Id, user2Id: user1Id, itemId: itemId || null },
+                            ],
+                        },
+                    });
+                    if (!concurrentConversation) throw createError;
+                    targetConversationId = concurrentConversation.id;
+                }
             }
         };
 
