@@ -82,22 +82,25 @@ function ChatConversation({ conversationId }: { conversationId: string }) {
         if (!conversationId) return;
 
         let active = true;
-        let fetching = false;
+        let isFetching = false;
 
         const fetchMessages = async () => {
-            if (fetching) return;
-            fetching = true;
+            if (isFetching) return;
+            isFetching = true;
 
             try {
                 const res = await axios.get(`/api/chat?conversationId=${conversationId}`, {
                     timeout: 15000,
                 });
                 if (!active) return;
+
                 const persistedMessages: Message[] = res.data.messages || [];
+
                 setMessages((currentMessages) => {
                     const pendingMessages = currentMessages.filter(
                         (message) => message.id.startsWith("pending-"),
                     );
+
                     const nextMessages = [
                         ...persistedMessages,
                         ...pendingMessages.filter(
@@ -107,6 +110,8 @@ function ChatConversation({ conversationId }: { conversationId: string }) {
                                 ),
                         ),
                     ];
+
+                    // Safe equality check with optional chaining to prevent crashes
                     const unchanged =
                         currentMessages.length === nextMessages.length &&
                         currentMessages.every((message, index) => {
@@ -118,12 +123,13 @@ function ChatConversation({ conversationId }: { conversationId: string }) {
                                 message.receiverId === nextMessage.receiverId &&
                                 message.createdAt === nextMessage.createdAt &&
                                 message.read === nextMessage.read &&
-                                message.sender.name === nextMessage.sender.name
+                                (message.sender?.name ?? "") === (nextMessage.sender?.name ?? "")
                             );
                         });
 
                     return unchanged ? currentMessages : nextMessages;
                 });
+
                 setItem(res.data.item || null);
                 setPartner(res.data.partner || null);
                 setCurrentUserId(res.data.currentUserId || null);
@@ -135,24 +141,27 @@ function ChatConversation({ conversationId }: { conversationId: string }) {
                     setHistoryError("We couldn't load this conversation. Please try again.");
                 }
             } finally {
-                fetching = false;
+                isFetching = false;
                 if (active) setLoading(false);
             }
         };
 
+        // Initial fetch
         void fetchMessages();
-        // Database polling is the source-of-truth fallback when users are
-        // connected to different server processes and cannot share the SSE emitter.
+
+        // Polling fallback
         const refreshInterval = window.setInterval(() => {
             void fetchMessages();
         }, 3000);
 
-        // Connect to the message stream for this conversation.
+        // Real-time stream
         const eventSource = new EventSource(
             `/api/chat/stream?conversationId=${conversationId}`
         );
 
-        eventSource.onmessage = () => void fetchMessages();
+        eventSource.onmessage = () => {
+            void fetchMessages();
+        };
 
         return () => {
             active = false;
@@ -337,7 +346,7 @@ function ChatConversation({ conversationId }: { conversationId: string }) {
     return (
         <div className="max-w-3xl mx-auto h-[calc(100vh-5rem)] flex flex-col p-4">
             {/* Header */}
-            
+
             <div className="flex items-center justify-between pb-4 border-b border-border">
                 <div className="flex items-center gap-3">
                     <button
@@ -431,7 +440,7 @@ function ChatConversation({ conversationId }: { conversationId: string }) {
                     messages.map((msg, index) => {
                         const isMe =
                             msg.id.startsWith("pending-") ||
-                            (currentUserId !== null && msg.senderId === currentUserId);
+                            (Boolean(currentUserId) && msg.senderId === currentUserId);
                         const participantIds = [currentUserId, partner?.id]
                             .filter((id): id is string => Boolean(id))
                             .sort();
@@ -439,22 +448,22 @@ function ChatConversation({ conversationId }: { conversationId: string }) {
                         const senderColors =
                             senderColorIndex === 1
                                 ? {
-                                      bubble: "bg-emerald-600 text-white",
-                                      label: "text-emerald-700 dark:text-emerald-300",
-                                  }
+                                    bubble: "bg-emerald-600 text-white",
+                                    label: "text-emerald-700 dark:text-emerald-300",
+                                }
                                 : {
-                                      bubble: "bg-indigo-600 text-white",
-                                      label: "text-indigo-700 dark:text-indigo-300",
-                                  };
+                                    bubble: "bg-indigo-600 text-white",
+                                    label: "text-indigo-700 dark:text-indigo-300",
+                                };
                         const senderName = isMe
-                            ? `${currentUserName || msg.sender.name || "You"} (You)`
-                            : msg.sender.name || partner?.name || "Other user";
+                            ? "You"
+                            : msg.sender?.name || partner?.name || "Partner";
                         const messageDate = new Date(msg.createdAt);
                         const previousMessage = messages[index - 1];
                         const startsNewDay =
                             !previousMessage ||
                             new Date(previousMessage.createdAt).toDateString() !==
-                                messageDate.toDateString();
+                            messageDate.toDateString();
                         const today = new Date();
                         const yesterday = new Date();
                         yesterday.setDate(today.getDate() - 1);
@@ -462,8 +471,8 @@ function ChatConversation({ conversationId }: { conversationId: string }) {
                             messageDate.toDateString() === today.toDateString()
                                 ? "Today"
                                 : messageDate.toDateString() === yesterday.toDateString()
-                                  ? "Yesterday"
-                                  : messageDate.toLocaleDateString([], {
+                                    ? "Yesterday"
+                                    : messageDate.toLocaleDateString([], {
                                         month: "long",
                                         day: "numeric",
                                         year: "numeric",
@@ -477,22 +486,16 @@ function ChatConversation({ conversationId }: { conversationId: string }) {
                                         </span>
                                     </div>
                                 )}
-                                <div
-                                    className={`flex flex-col ${
-                                        isMe ? "items-end" : "items-start"
-                                    }`}
-                                >
-                                    <span
-                                        className={`mb-1 px-1 text-xs font-semibold ${senderColors.label}`}
-                                    >
+                                <div className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
+                                    <span className={`mb-1 px-1 text-xs font-semibold ${isMe ? "text-indigo-700 dark:text-indigo-300" : "text-emerald-700 dark:text-emerald-300"}`}>
                                         {senderName}
                                     </span>
+
                                     <div
-                                        className={`max-w-[75%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm ${senderColors.bubble} ${
-                                            isMe
-                                                ? "rounded-br-none"
-                                                : "rounded-bl-none"
-                                        }`}
+                                        className={`max-w-[75%] whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm ${isMe
+                                            ? "bg-indigo-600 text-white rounded-br-none"
+                                            : "bg-muted text-foreground rounded-bl-none" // Distinct color for opposite user!
+                                            }`}
                                     >
                                         {msg.content}
                                     </div>
@@ -529,9 +532,8 @@ function ChatConversation({ conversationId }: { conversationId: string }) {
                                                 minute: "2-digit",
                                             })}
                                         </span>
-
                                         {isMe && (
-                                            <span className="ml-1 font-medium text-gray-400 dark:text-gray-500">
+                                            <span className="ml-1 font-medium text-gray-400">
                                                 • {msg.read ? "Read" : "Sent"}
                                             </span>
                                         )}

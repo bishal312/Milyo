@@ -9,8 +9,8 @@ export async function GET(
 ) {
     try {
         const session = await auth.api.getSession({
-                    headers: await headers(),
-                })
+            headers: await headers(),
+        })
         const currentUser = session?.user;
 
         if (!currentUser) {
@@ -20,7 +20,11 @@ export async function GET(
         const { conversationId } = await params;
         const conversation = await db.conversation.findUnique({
             where: { id: conversationId },
-            select: { user1Id: true, user2Id: true },
+            include: {
+                user1: { select: { id: true, name: true, image: true } },
+                user2: { select: { id: true, name: true, image: true } },
+                item: true, // Remove or adjust if your schema relation is named differently
+            },
         });
         if (
             !conversation ||
@@ -33,6 +37,11 @@ export async function GET(
             );
         }
 
+        const partner =
+            conversation.user1Id === currentUser.id
+                ? conversation.user2
+                : conversation.user1;
+
         const messages = await db.chatMessage.findMany({
             where: { conversationId },
             orderBy: { createdAt: "asc" },
@@ -44,7 +53,13 @@ export async function GET(
         });
 
         return NextResponse.json(
-            { messages }
+            {
+                messages,
+                partner,
+                item: conversation.item || null,
+                currentUserId: currentUser.id,
+                currentUserName: currentUser.name,
+            }
         );
     } catch (error) {
         console.error("Error fetching messages: ", error);
