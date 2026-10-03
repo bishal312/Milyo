@@ -17,6 +17,7 @@ import {
     Trash2,
     Users,
 } from "lucide-react";
+import { reportSchema } from "@/types";
 
 type Entity =
     | "users"
@@ -66,6 +67,8 @@ const editableFields: Partial<Record<Entity, string[]>> = {
     conversations: ["itemId", "user1Id", "user2Id"],
     messages: ["conversationId", "itemId", "senderId", "receiverId", "content", "read"],
 };
+
+const categories = reportSchema.shape.category.options;
 
 function errorMessage(error: unknown) {
     if (axios.isAxiosError<{ error?: string }>(error)) {
@@ -312,9 +315,8 @@ export default function AdminPage() {
                                 offsetRef.current = 0;
                                 setSection(id);
                             }}
-                            className={`flex shrink-0 items-center gap-3 rounded-xl px-4 py-3 text-left text-sm transition ${
-                                section === id ? "bg-blue-600 text-white" : "text-slate-300 hover:bg-slate-900"
-                            }`}
+                            className={`flex shrink-0 items-center gap-3 rounded-xl px-4 py-3 text-left text-sm transition ${section === id ? "bg-blue-600 text-white" : "text-slate-300 hover:bg-slate-900"
+                                }`}
                         >
                             <Icon className="h-4 w-4" />
                             {label}
@@ -489,19 +491,27 @@ export default function AdminPage() {
 
                             {dialog.kind === "category" && (
                                 <div className="mt-4">
-                                    <label htmlFor="admin-category-name" className="mb-1.5 block text-sm font-medium text-slate-300">
+                                    <label htmlFor="admin-category-select" className="mb-1.5 block text-sm font-medium text-slate-300">
                                         {dialog.mode === "rename" ? "New category name" : "Move items to"}
                                     </label>
-                                    <input
-                                        id="admin-category-name"
-                                        type="text"
+                                    <select
+                                        id="admin-category-select"
                                         required
                                         autoFocus
                                         value={dialog.value}
                                         onChange={(event) => updateCategoryValue(event.target.value)}
-                                        maxLength={100}
                                         className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30"
-                                    />
+                                    >
+                                        <option value="" disabled>
+                                            Select a category...
+                                        </option>
+                                        {/* Map over your categories array here */}
+                                        {categories.map((category) => (
+                                            <option key={category} value={category}>
+                                                {category}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
                             )}
 
@@ -523,11 +533,10 @@ export default function AdminPage() {
                                 <button
                                     type="submit"
                                     disabled={savingId !== null || (dialog.kind === "category" && !dialog.value.trim())}
-                                    className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
-                                        dialog.kind === "delete" || dialog.kind === "category" && dialog.mode === "reassign"
+                                    className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${dialog.kind === "delete" || dialog.kind === "category" && dialog.mode === "reassign"
                                             ? "bg-red-700 hover:bg-red-600"
                                             : "bg-blue-600 hover:bg-blue-500"
-                                    }`}
+                                        }`}
                                 >
                                     {savingId !== null
                                         ? "Saving…"
