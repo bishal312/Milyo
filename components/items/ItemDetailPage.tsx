@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import dynamic from "next/dynamic";
 import { format } from "date-fns";
 import {
@@ -32,6 +33,7 @@ interface ItemDetail {
     id: string;
     title: string;
     description?: string | null;
+    photoUrl?: string | null;
     category: string;
     type: "LOST" | "FOUND";
     status: string;
@@ -151,6 +153,19 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
                                 {format(new Date(item.createdAt), "PPP")}
                             </span>
                         </div>
+
+                        {item.photoUrl && (
+                            <div className="overflow-hidden rounded-lg border border-border bg-muted">
+                                <Image
+                                    src={item.photoUrl}
+                                    alt={`Photo of ${item.title}`}
+                                    width={1200}
+                                    height={900}
+                                    unoptimized
+                                    className="max-h-96 w-full object-contain"
+                                />
+                            </div>
+                        )}
 
                         <h1 className="text-2xl md:text-3xl font-bold tracking-tight font-serif text-foreground">
                             {item.title}

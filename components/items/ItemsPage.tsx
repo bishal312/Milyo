@@ -1,17 +1,20 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMapEvents, MapContainer as LeafletMapContainer, TileLayer as LeafletTileLayer, Marker as LeafletMarker } from "react-leaflet";
-import { useForm, Controller } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import {
     AlertCircle,
     ArrowLeft,
     FileText,
+    ImagePlus,
     Loader2,
     MapPin,
     PackagePlus,
-    Tag
+    Tag,
+    X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { ReportFormValues, reportSchema } from "@/types";
@@ -33,6 +36,25 @@ const Marker = dynamic(
     () => import("react-leaflet").then((mod) => mod.Marker as unknown as typeof LeafletMarker),
     { ssr: false }
 ) as typeof LeafletMarker;
+
+const MAX_PHOTO_SIZE_BYTES = 3 * 1024 * 1024;
+const ACCEPTED_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
+function readFileAsDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            if (typeof reader.result !== "string") {
+                reject(new Error("The selected image could not be read."));
+                return;
+            }
+
+            resolve(reader.result);
+        };
+        reader.onerror = () => reject(reader.error ?? new Error("The selected image could not be read."));
+        reader.readAsDataURL(file);
+    });
+}
 
 
 function LocationPickerMarker({
@@ -56,6 +78,9 @@ export default function ReportItemPage() {
     const [submitting, setSubmitting] = useState(false);
     const [fetchingLocation, setFetchingLocation] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [photo, setPhoto] = useState<File | null>(null);
+    const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+    const photoInputRef = useRef<HTMLInputElement>(null);
 
     const {
         register,
@@ -63,7 +88,6 @@ export default function ReportItemPage() {
         reset,
         setValue,
         watch,
-        control,
         formState: { errors },
     } = useForm<ReportFormValues>({
         resolver: zodResolver(reportSchema),
@@ -76,6 +100,18 @@ export default function ReportItemPage() {
             longitude: null,
         },
     });
+
+    useEffect(() => {
+        if (!photo) {
+            setPhotoPreview(null);
+            return;
+        }
+
+        const previewUrl = URL.createObjectURL(photo);
+        setPhotoPreview(previewUrl);
+
+        return () => URL.revokeObjectURL(previewUrl);
+    }, [photo]);
 
     useEffect(() => {
         import("leaflet").then((L) => {
@@ -126,11 +162,15 @@ export default function ReportItemPage() {
         setError(null);
 
         try {
-            const res = await api.post("/items", data);
+            const photoUrl = photo ? await readFileAsDataUrl(photo) : null;
+            await api.post("/items", { ...data, photoUrl });
 
-            console.log(res.data);
             alert("successfully submited")
-            reset()
+            reset();
+            setPhoto(null);
+            if (photoInputRef.current) {
+                photoInputRef.current.value = "";
+            }
         } catch (error) {
             console.log(error);
             setError("Something went wrong. Please try again.");
@@ -244,6 +284,67 @@ export default function ReportItemPage() {
                         {...register("description")}
                         className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                     />
+                </div>
+
+                {/* Optional Item Photo */}
+                <div className="space-y-2">
+                    <label htmlFor="photo" className="text-sm font-medium text-card-foreground flex items-center gap-2">
+                        <ImagePlus className="w-4 h-4 text-muted-foreground" /> Photo (optional)
+                    </label>
+                    <input
+                        ref={photoInputRef}
+                        id="photo"
+                        type="file"
+                        accept={ACCEPTED_PHOTO_TYPES.join(",")}
+                        onChange={(event) => {
+                            const selectedPhoto = event.target.files?.[0];
+                            if (!selectedPhoto) {
+                                return;
+                            }
+
+                            if (!ACCEPTED_PHOTO_TYPES.includes(selectedPhoto.type)) {
+                                setError("Choose a JPEG, PNG, or WebP image.");
+                                event.target.value = "";
+                                return;
+                            }
+
+                            if (selectedPhoto.size > MAX_PHOTO_SIZE_BYTES) {
+                                setError("The image must be no larger than 3 MB.");
+                                event.target.value = "";
+                                return;
+                            }
+
+                            setError(null);
+                            setPhoto(selectedPhoto);
+                        }}
+                        className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-lg file:border-0 file:bg-primary/10 file:px-4 file:py-2 file:font-medium file:text-primary hover:file:bg-primary/20"
+                    />
+                    <p className="text-xs text-muted-foreground">JPEG, PNG, or WebP; up to 3 MB.</p>
+                    {photo && photoPreview && (
+                        <div className="relative w-fit">
+                            <Image
+                                src={photoPreview}
+                                alt="Selected item preview"
+                                width={480}
+                                height={320}
+                                unoptimized
+                                className="max-h-56 max-w-full rounded-lg border border-border object-contain"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setPhoto(null);
+                                    if (photoInputRef.current) {
+                                        photoInputRef.current.value = "";
+                                    }
+                                }}
+                                className="absolute right-2 top-2 rounded-full bg-background/90 p-1.5 text-foreground shadow hover:bg-background"
+                                aria-label="Remove selected photo"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Map Location Selector */}
