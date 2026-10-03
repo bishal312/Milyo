@@ -132,48 +132,63 @@ export async function POST(req: Request) {
 
         //if conversationID isn't passed directly, find or create one
         if (!targetConversationId) {
-            if (!receiverId) {
+            if (
+                typeof receiverId !== "string" ||
+                !receiverId ||
+                typeof itemId !== "string" ||
+                !itemId
+            ) {
                 return NextResponse.json(
-                    { error: "receiverId is required when conversationId is omitted" },
+                    { error: "receiverId and itemId are required when conversationId is omitted" },
                     { status: 400 }
                 );
             }
 
-            //check for existing conversation between user1 & user2 for the item
+            if (receiverId === session.user.id) {
+                return NextResponse.json(
+                    { error: "You cannot start a conversation with yourself" },
+                    { status: 400 }
+                );
+            }
+
+            const item = await db.item.findUnique({
+                where: { id: itemId },
+                select: { reportedBy: true },
+            });
+            if (!item) {
+                return NextResponse.json({ error: "Item not found" }, { status: 404 });
+            }
+            if (item.reportedBy !== receiverId) {
+                return NextResponse.json(
+                    { error: "The recipient must be the item's reporter" },
+                    { status: 400 }
+                );
+            }
+
+            const [user1Id, user2Id] = [session.user.id, receiverId].sort();
+
+            // Reuse a legacy conversation even if its participant order was reversed.
             const existingConversation = await db.conversation.findFirst({
                 where: {
                     OR: [
-                        { user1Id: session.user.id, user2Id: receiverId, itemId: itemId || null },
-                        { user1Id: receiverId, user2Id: session.user.id, itemId: itemId || null },
+                        { user1Id, user2Id, itemId },
+                        { user1Id: user2Id, user2Id: user1Id, itemId },
                     ],
                 },
+                orderBy: [{ createdAt: "asc" }, { id: "asc" }],
             });
 
             if (existingConversation) {
                 targetConversationId = existingConversation.id;
             } else {
-                const [user1Id, user2Id] = [session.user.id, receiverId].sort();
-                try {
-                    const newConversation = await db.conversation.create({
-                        data: {
-                            user1Id,
-                            user2Id,
-                            itemId: itemId || null,
-                        },
-                    });
-                    targetConversationId = newConversation.id;
-                } catch (createError) {
-                    const concurrentConversation = await db.conversation.findFirst({
-                        where: {
-                            OR: [
-                                { user1Id, user2Id, itemId: itemId || null },
-                                { user1Id: user2Id, user2Id: user1Id, itemId: itemId || null },
-                            ],
-                        },
-                    });
-                    if (!concurrentConversation) throw createError;
-                    targetConversationId = concurrentConversation.id;
-                }
+                const conversation = await db.conversation.upsert({
+                    where: {
+                        user1Id_user2Id_itemId: { user1Id, user2Id, itemId },
+                    },
+                    update: {},
+                    create: { user1Id, user2Id, itemId },
+                });
+                targetConversationId = conversation.id;
             }
         };
 

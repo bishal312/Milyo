@@ -40,6 +40,14 @@ interface ItemDetail {
     latitude?: number | null;
     longitude?: number | null;
     createdAt: string;
+    isOwnItem: boolean;
+    existingConversations: {
+        id: string;
+        partner: {
+            id: string;
+            name: string;
+        };
+    }[];
     reporter?: {
         id: string;
         name: string;
@@ -57,7 +65,7 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
     const router = useRouter()
 
     async function handleStartChat() {
-        if (!item?.reporter?.id) return;
+        if (!item?.reporter?.id || item.isOwnItem) return;
 
         try {
             const res = await axios.post("/api/chat", {
@@ -68,8 +76,8 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
             if (res.data?.conversationId) {
                 router.push(`/chat/${res.data.conversationId}`);
             }
-        } catch (err: any) {
-            if (err.response?.status === 400) {
+        } catch (err: unknown) {
+            if (axios.isAxiosError<{ error?: string }>(err) && err.response?.status === 400) {
                 alert(err.response.data.error || "You cannot message yourself about your own item.");
             } else {
                 console.error("Failed to start chat:", err);
@@ -87,8 +95,8 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
                 }
                 const data = res.data;
                 setItem(data);
-            } catch (err: any) {
-                setError(err.message || "Something went wrong.");
+            } catch (err: unknown) {
+                setError(err instanceof Error ? err.message : "Something went wrong.");
             } finally {
                 setLoading(false);
             }
@@ -96,6 +104,29 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
 
         fetchItem();
     }, [id]);
+
+    useEffect(() => {
+        if (!item?.isOwnItem) return;
+
+        let active = true;
+        const refreshConversations = async () => {
+            try {
+                const res = await axios.get(`/api/items/${id}`);
+                if (active) setItem(res.data);
+            } catch (err) {
+                console.error("Failed to refresh item conversations:", err);
+            }
+        };
+
+        const refreshInterval = window.setInterval(() => {
+            void refreshConversations();
+        }, 5000);
+
+        return () => {
+            active = false;
+            window.clearInterval(refreshInterval);
+        };
+    }, [id, item?.isOwnItem]);
 
     if (loading) {
         return (
@@ -233,14 +264,33 @@ export default function ItemDetailPage({ params }: { params: Promise<{ id: strin
                         </div>
 
                         <div className="space-y-3 pt-2">
-                            <button
-                                onClick={handleStartChat}
-                                disabled={!item.reporter?.id}
-                                className="w-full inline-flex items-center justify-center gap-2 bg-primary hover:opacity-90 text-primary-foreground font-medium py-2.5 rounded-lg text-sm transition-opacity shadow-sm"
-                            >
-                                <MessageSquare className="w-4 h-4" />
-                                Send Message
-                            </button>
+                            {item.isOwnItem ? (
+                                item.existingConversations.length > 0 ? (
+                                    item.existingConversations.map((conversation) => (
+                                        <Link
+                                            key={conversation.id}
+                                            href={`/chat/${conversation.id}`}
+                                            className="w-full inline-flex items-center justify-center gap-2 bg-primary hover:opacity-90 text-primary-foreground font-medium py-2.5 rounded-lg text-sm transition-opacity"
+                                        >
+                                            <MessageSquare className="w-4 h-4" />
+                                            Message {conversation.partner.name}
+                                        </Link>
+                                    ))
+                                ) : (
+                                    <p className="text-xs text-muted-foreground text-center">
+                                        Conversations will appear here when someone messages you about this item.
+                                    </p>
+                                )
+                            ) : (
+                                <button
+                                    onClick={handleStartChat}
+                                    disabled={!item.reporter?.id}
+                                    className="w-full inline-flex items-center justify-center gap-2 bg-primary hover:opacity-90 text-primary-foreground font-medium py-2.5 rounded-lg text-sm transition-opacity shadow-sm"
+                                >
+                                    <MessageSquare className="w-4 h-4" />
+                                    Send Message
+                                </button>
+                            )}
 
                             <button
                                 onClick={() => alert("Claim request sent to reporter!")}

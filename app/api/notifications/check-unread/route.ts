@@ -38,7 +38,7 @@ async function handler(req: Request) {
                     recipientName: message.receiver.name || "User",
                     senderName: message.sender.name || "Someone",
                     itemTitle: message.item.title,
-                    messagePreview: message.content,
+                    messagePreview: message.content ?? "You received a message.",
                     conversationId: message.conversationId,
                 });
 
